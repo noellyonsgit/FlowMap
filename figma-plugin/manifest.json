@@ -1,0 +1,11 @@
+{
+  "name": "FlowMap Import",
+  "id": "flowmap-import",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["http://127.0.0.1:3920", "http://localhost:3920"],
+    "reasoning": "FlowMap runs locally and serves the mapped board plus screenshots."
+  }
+}

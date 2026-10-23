@@ -1,0 +1,17 @@
+{
+  "name": "flowmap",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "description": "Map the paths through a local app and export the journey.",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test server/lib/analytics/analytics.test.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.15.0"
+  }
+}

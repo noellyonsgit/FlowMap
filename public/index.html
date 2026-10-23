@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FlowMap</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">FlowMap</div>
+      <button id="project" type="button" class="project" hidden></button>
+      <p id="status" class="status"></p>
+      <div class="actions">
+        <button id="connect" type="button" hidden>Connect Google</button>
+        <div id="visits" class="visits" hidden>
+          <button id="visits-toggle" type="button" aria-expanded="false">Everyone</button>
+          <div id="visits-panel" class="visits-panel" hidden>
+            <label class="filter">
+              Computers and phones
+              <select id="device">
+                <option value="all">Everyone</option>
+                <option value="desktop">Computers</option>
+                <option value="mobile">Phones</option>
+                <option value="tablet">Tablets</option>
+              </select>
+            </label>
+            <label class="filter">
+              Where they came from
+              <select id="source">
+                <option value="all">Everyone</option>
+                <option value="Organic Search">Search</option>
+                <option value="Paid Search">Ads</option>
+                <option value="Organic Social">Social</option>
+                <option value="Paid Social">Paid social</option>
+                <option value="Email">Email</option>
+                <option value="Direct">Direct</option>
+                <option value="Referral">Another site</option>
+              </select>
+            </label>
+            <button id="switch-account" type="button">Switch account</button>
+          </div>
+        </div>
+        <button id="pdf" type="button" disabled>Save as PDF</button>
+        <button id="figma" type="button" disabled>Export to Figma</button>
+      </div>
+    </header>
+
+    <div id="empty" class="empty">
+      <h1>Map a local app</h1>
+      <p>FlowMap reads the routes, photographs each screen, and lays the visits on the path.</p>
+      <button id="open" type="button" class="primary">Choose folder</button>
+    </div>
+    <main id="board" hidden></main>
+    <article id="doc" class="doc" aria-hidden="true"></article>
+
+    <dialog id="viewer">
+      <form method="dialog">
+        <div class="viewer-bar">
+          <div>
+            <p id="viewer-kicker" class="viewer-kicker"></p>
+            <h2 id="viewer-name"></h2>
+            <p id="viewer-route" class="viewer-route"></p>
+          </div>
+          <div class="viewer-actions">
+            <button id="viewer-prev" type="button">Previous</button>
+            <button id="viewer-next" type="button">Next</button>
+            <button value="cancel">Close</button>
+          </div>
+        </div>
+        <div class="viewer-frame">
+          <img id="viewer-img" alt="" />
+          <p id="viewer-empty" class="viewer-empty" hidden></p>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="open-project" class="sheet">
+      <form method="dialog">
+        <h2>Choose a project</h2>
+        <p>Point FlowMap at the folder. It will map the paths and photograph the screens.</p>
+        <label>
+          Project folder
+          <input id="path" type="text" placeholder="/Users/you/Sites/my-app" spellcheck="false" />
+        </label>
+        <div class="row">
+          <button id="pick" type="button">Choose folder</button>
+          <button id="map" type="button" class="primary">Map paths</button>
+        </div>
+        <p id="dialog-status" class="status"></p>
+      </form>
+    </dialog>
+
+    <dialog id="figma-help" class="sheet">
+      <form method="dialog">
+        <h2>Export to Figma</h2>
+        <ol>
+          <li>Keep FlowMap running.</li>
+          <li>In Figma: Plugins → Development → Import plugin from manifest…</li>
+          <li>Choose the <code>figma-plugin/manifest.json</code> file in this project.</li>
+          <li>Run <strong>FlowMap Import</strong>. It places one frame per step, with a screenshot of the screen.</li>
+        </ol>
+        <div class="row">
+          <button value="cancel">Close</button>
+          <button id="download-json" value="default" class="primary">Download board JSON</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="google-setup" class="sheet">
+      <form method="dialog">
+        <h2>Connect Google</h2>
+        <p>This lets FlowMap read the Analytics already on your site. An empty “not configured yet” page is the right place to start.</p>
+        <ol>
+          <li><a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener">Open the Google Auth clients page</a>. If it says the auth platform is not configured, click <strong>Get started</strong>.</li>
+          <li>Enable the <strong>Google Analytics Data API</strong> and the <strong>Google Analytics Admin API</strong>.</li>
+          <li>Create a client and choose <strong>Desktop app</strong>. Download the JSON. Allow this redirect: <code id="google-redirect"></code></li>
+          <li>On <strong>Audience</strong>, add the Google account that can see Analytics as a test user.</li>
+        </ol>
+        <p>Choose that JSON below. FlowMap keeps it on this computer. While the app is in Testing, connect again after 7 days.</p>
+        <input id="google-json" type="file" accept="application/json,.json" hidden />
+        <div class="row">
+          <button value="cancel">Close</button>
+          <button id="google-save" type="button" class="primary">Choose the downloaded JSON</button>
+        </div>
+        <p id="google-setup-status" class="status"></p>
+      </form>
+    </dialog>
+
+    <dialog id="site-pick" class="sheet">
+      <form method="dialog">
+        <h2>Choose the site</h2>
+        <div id="site-list" class="site-list"></div>
+        <div class="row">
+          <button value="cancel">Cancel</button>
+          <button id="site-save" class="primary" type="button">Use this site</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="/app.js?v=6" type="module"></script>
+  </body>
+</html>
