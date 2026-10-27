@@ -31,6 +31,16 @@ const sourceSelect = document.querySelector('#source')
 const LABEL_W = 168
 const CARD_W = 280
 const COL_GAP = 64
+const ZOOM_MIN = 0.15
+const ZOOM_MAX = 1.6
+const zoomBar = document.querySelector('#zoom')
+const zoomOutBtn = document.querySelector('#zoom-out')
+const zoomInBtn = document.querySelector('#zoom-in')
+const zoomFitBtn = document.querySelector('#zoom-fit')
+const zoomLevel = document.querySelector('#zoom-level')
+let zoom = 1
+let userZoom = false
+let mapFlow = null
 
 function setStatus(text, error = false) {
   statusEl.textContent = text || ''
@@ -86,11 +96,11 @@ function cardHeight(step, flow) {
   return cardBodyHeight(step) + 58 + meter + chips + lines * 18
 }
 
-function laneMetrics(flow) {
+function laneMetrics(flow, captions, bodies) {
   let y = 12
   return flow.lanes.map((lane) => {
     const steps = flow.steps.filter((s) => s.laneId === lane.id)
-    const height = Math.max(200, ...steps.map((step) => cardHeight(step, flow))) + 28
+    const height = Math.max(200, ...steps.map((step) => (bodies?.get(step.id) || cardBodyHeight(step)) + (captions?.get(step.id) || 72))) + 28
     const metric = { y, height }
     y += height
     return metric
@@ -99,7 +109,7 @@ function laneMetrics(flow) {
 
 function stepPos(flow, step, metrics) {
   const lane = Math.max(0, flow.lanes.findIndex((l) => l.id === step.laneId))
-  return { x: LABEL_W + step.col * (CARD_W + COL_GAP), y: metrics[lane].y + 16 }
+  return { x: LABEL_W / zoom + step.col * (CARD_W + COL_GAP), y: metrics[lane].y + 16 }
 }
 
 function orderedSteps(flow) {
@@ -360,8 +370,13 @@ function openSites(sites) {
 function render(flows) {
   board.innerHTML = ''
   const flow = flows.find((f) => f.id === activeId) ?? flows[0]
-  if (!flow) return
+  if (!flow) {
+    mapFlow = null
+    zoomBar.hidden = true
+    return
+  }
   activeId = flow.id
+  mapFlow = flow
 
   const tabs = document.createElement('div')
   tabs.className = 'journeys'
@@ -392,14 +407,19 @@ function render(flows) {
     height = Math.max(height, p.y + cardHeight(step, flow) + 24)
   }
 
+  const stage = document.createElement('div')
+  stage.className = 'stage'
   const canvas = document.createElement('div')
   canvas.className = 'canvas'
   canvas.style.width = `${width}px`
   canvas.style.height = `${height}px`
+  const captionsLayer = document.createElement('div')
+  captionsLayer.className = 'captions'
 
   flow.lanes.forEach((lane, index) => {
     const wash = document.createElement('div')
     wash.className = `lane-wash ${lane.kind}`
+    wash.dataset.lane = lane.id
     wash.style.top = `${metrics[index].y}px`
     wash.style.height = `${metrics[index].height - 12}px`
     const laneSteps = flow.steps.filter((step) => step.laneId === lane.id)
@@ -416,9 +436,10 @@ function render(flows) {
     canvas.appendChild(wash)
     const label = document.createElement('div')
     label.className = 'lane-label'
+    label.dataset.lane = lane.id
     label.style.top = `${metrics[index].y + 10}px`
     label.textContent = lane.name
-    canvas.appendChild(label)
+    captionsLayer.appendChild(label)
   })
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -430,6 +451,8 @@ function render(flows) {
     const a = stepPos(flow, from, metrics)
     const b = stepPos(flow, to, metrics)
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.dataset.from = edge.from
+    path.dataset.to = edge.to
     if (Math.abs(a.x - b.x) < 8 && b.y > a.y) {
       const x = a.x + CARD_W / 2
       const y1 = a.y + cardBodyHeight(from)
@@ -461,6 +484,7 @@ function render(flows) {
     const p = stepPos(flow, step, metrics)
     const card = document.createElement('article')
     card.className = 'card'
+    card.dataset.step = step.id
     card.tabIndex = 0
     card.setAttribute('role', 'button')
     card.setAttribute('aria-label', `View ${step.name}`)
@@ -479,10 +503,16 @@ function render(flows) {
       const img = document.createElement('img')
       img.src = `/shots/${step.shotId}`
       img.alt = step.name
+      img.addEventListener('load', () => {
+        if (userZoom) place()
+        else fitZoom(false)
+      })
       shot.appendChild(img)
     } else shot.textContent = step.shotError ? 'Could not capture this route' : step.state || 'No capture yet'
     const meta = document.createElement('div')
-    meta.className = 'meta'
+    meta.className = 'caption'
+    meta.dataset.step = step.id
+    meta.onclick = open
     const name = document.createElement('strong')
     name.textContent = step.name
     const route = document.createElement('p')
@@ -511,19 +541,246 @@ function render(flows) {
       meta.append(meter)
     }
     for (const line of [stat?.leave, stat?.unhappy].filter(Boolean)) meta.append(el('p', 'stat', line))
-    card.append(shot, meta)
+    card.append(shot)
     canvas.appendChild(card)
+    captionsLayer.appendChild(meta)
   }
 
-  board.appendChild(canvas)
+  stage.append(canvas, captionsLayer)
+  board.appendChild(stage)
   const ready = flows.some((f) => f.steps.length)
   empty.hidden = ready
   board.hidden = !ready
+  zoomBar.hidden = !ready
+  if (ready) {
+    if (userZoom) applyZoom()
+    else fitZoom(false)
+  }
   projectBtn.hidden = !session?.project
   projectBtn.textContent = session?.project?.name || 'Project'
   pdfBtn.disabled = !ready
   figmaBtn.disabled = !ready
 }
+
+function clampZoom(value) {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value))
+}
+
+function place(anchor) {
+  const canvas = board.querySelector('.canvas')
+  const stage = board.querySelector('.stage')
+  const flow = mapFlow
+  if (!canvas || !stage || !flow) return
+  canvas.style.setProperty('--z', String(zoom))
+  const captions = new Map()
+  const bodies = new Map()
+  for (const card of canvas.querySelectorAll('.card')) bodies.set(card.dataset.step, card.offsetHeight)
+  for (const caption of stage.querySelectorAll('.caption')) {
+    caption.style.width = `${CARD_W * zoom}px`
+    captions.set(caption.dataset.step, caption.offsetHeight / zoom)
+  }
+  const metrics = laneMetrics(flow, captions, bodies)
+  const byId = new Map(flow.steps.map((step) => [step.id, step]))
+  let width = LABEL_W / zoom + CARD_W + 40
+  let height = metrics.reduce((sum, lane) => sum + lane.height, 24)
+  for (const step of flow.steps) {
+    const p = stepPos(flow, step, metrics)
+    width = Math.max(width, p.x + CARD_W + 48)
+    height = Math.max(height, p.y + (bodies.get(step.id) || cardBodyHeight(step)) + (captions.get(step.id) || 0) + 24)
+  }
+  canvas.style.width = `${width}px`
+  canvas.style.height = `${height}px`
+  for (const wash of canvas.querySelectorAll('.lane-wash')) {
+    const index = flow.lanes.findIndex((lane) => lane.id === wash.dataset.lane)
+    if (index < 0) continue
+    const lane = flow.lanes[index]
+    wash.style.top = `${metrics[index].y}px`
+    wash.style.height = `${metrics[index].height - 12}px`
+    const laneSteps = flow.steps.filter((step) => step.laneId === lane.id)
+    if (lane.kind === 'happy' || !laneSteps.length) {
+      wash.style.left = `${LABEL_W / zoom - 18}px`
+      wash.style.right = '0'
+      wash.style.width = ''
+    } else {
+      const xs = laneSteps.map((step) => stepPos(flow, step, metrics).x)
+      const left = Math.min(...xs) - 12
+      const right = Math.max(...xs) + CARD_W + 12
+      wash.style.left = `${left}px`
+      wash.style.width = `${right - left}px`
+      wash.style.right = ''
+    }
+  }
+  for (const label of stage.querySelectorAll('.lane-label')) {
+    const index = flow.lanes.findIndex((lane) => lane.id === label.dataset.lane)
+    if (index < 0) continue
+    label.style.top = `${metrics[index].y * zoom + 10}px`
+  }
+  for (const card of canvas.querySelectorAll('.card')) {
+    const step = byId.get(card.dataset.step)
+    if (!step) continue
+    const p = stepPos(flow, step, metrics)
+    card.style.left = `${p.x}px`
+    card.style.top = `${p.y}px`
+  }
+  for (const caption of stage.querySelectorAll('.caption')) {
+    const step = byId.get(caption.dataset.step)
+    if (!step) continue
+    const p = stepPos(flow, step, metrics)
+    const body = bodies.get(step.id) || cardBodyHeight(step)
+    caption.style.left = `${p.x * zoom}px`
+    caption.style.top = `${(p.y + body) * zoom - 1}px`
+  }
+  const svg = canvas.querySelector('svg')
+  if (svg) {
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
+    for (const path of svg.querySelectorAll('path')) {
+      const from = byId.get(path.dataset.from)
+      const to = byId.get(path.dataset.to)
+      if (!from || !to) continue
+      const a = stepPos(flow, from, metrics)
+      const b = stepPos(flow, to, metrics)
+      if (Math.abs(a.x - b.x) < 8 && b.y > a.y) {
+        const x = a.x + CARD_W / 2
+        const y1 = a.y + (bodies.get(from.id) || cardBodyHeight(from)) + (captions.get(from.id) || 0)
+        path.setAttribute('d', `M${x},${y1} C${x},${y1 + 28} ${x},${b.y - 28} ${x},${b.y}`)
+      } else {
+        const fromBody = bodies.get(from.id) || cardBodyHeight(from)
+        const toBody = bodies.get(to.id) || cardBodyHeight(to)
+        const x1 = a.x + CARD_W
+        const y1 = a.y + Math.min(120, fromBody / 2)
+        const x2 = b.x
+        const y2 = b.y + Math.min(120, toBody / 2)
+        const mx = (x1 + x2) / 2
+        path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`)
+      }
+    }
+  }
+  canvas.style.transform = `scale(${zoom})`
+  stage.style.width = `${Math.ceil(width * zoom)}px`
+  stage.style.height = `${Math.ceil(height * zoom)}px`
+  zoomLevel.textContent = `${Math.round(zoom * 100)}%`
+  zoomOutBtn.disabled = zoom <= ZOOM_MIN + 0.001
+  zoomInBtn.disabled = zoom >= ZOOM_MAX - 0.001
+  if (anchor) {
+    const rect = canvas.getBoundingClientRect()
+    const scale = anchor.zoom ? zoom / anchor.zoom : 1
+    const nextX = anchor.sx < LABEL_W ? anchor.sx : LABEL_W + (anchor.sx - LABEL_W) * scale
+    const nextY = anchor.sy * scale
+    window.scrollBy(rect.left + nextX - anchor.clientX, rect.top + nextY - anchor.clientY)
+  }
+}
+
+function pointerAnchor(clientX, clientY) {
+  const canvas = board.querySelector('.canvas')
+  const rect = canvas?.getBoundingClientRect()
+  if (!rect || !rect.width) return null
+  return {
+    sx: clientX - rect.left,
+    sy: clientY - rect.top,
+    clientX,
+    clientY,
+    zoom,
+  }
+}
+
+function applyZoom() {
+  place()
+}
+
+function fitZoom(scroll) {
+  const topChrome = (document.querySelector('.top')?.offsetHeight || 0)
+    + (board.querySelector('.journeys')?.offsetHeight || 0)
+    + (board.querySelector('.journey-bar')?.offsetHeight || 0)
+  const availW = Math.max(320, window.innerWidth - 56)
+  const availH = Math.max(220, window.innerHeight - topChrome - 72)
+  const cols = mapFlow ? Math.max(0, ...mapFlow.steps.map((step) => step.col)) : 0
+  let next = clampZoom(Math.min(1, (availW - 40) / (LABEL_W + (cols + 1) * (CARD_W + COL_GAP))))
+  for (let i = 0; i < 5; i++) {
+    zoom = next
+    place()
+    const stage = board.querySelector('.stage')
+    if (!stage?.offsetWidth || !stage?.offsetHeight) break
+    const fitted = Math.min(1, zoom * availW / stage.offsetWidth, zoom * availH / stage.offsetHeight)
+    if (Math.abs(fitted - zoom) < 0.02) {
+      next = clampZoom(fitted)
+      break
+    }
+    next = clampZoom(fitted)
+  }
+  zoom = next
+  place()
+  if (scroll) window.scrollTo(0, 0)
+}
+
+function nudgeZoom(direction, clientX, clientY) {
+  const anchor = clientX != null && clientY != null ? pointerAnchor(clientX, clientY) : null
+  userZoom = true
+  zoom = clampZoom(zoom * (direction > 0 ? 1.2 : 1 / 1.2))
+  place(anchor)
+}
+
+zoomOutBtn.onclick = () => nudgeZoom(-1)
+zoomInBtn.onclick = () => nudgeZoom(1)
+zoomFitBtn.onclick = () => {
+  userZoom = false
+  fitZoom(true)
+}
+
+function overMap(event) {
+  const stage = board.querySelector('.stage')
+  if (!stage || board.hidden) return false
+  if (stage.contains(event.target)) return true
+  const rect = stage.getBoundingClientRect()
+  return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom
+}
+
+window.addEventListener('wheel', (event) => {
+  if (!event.ctrlKey || !overMap(event)) return
+  event.preventDefault()
+  const anchor = pointerAnchor(event.clientX, event.clientY)
+  userZoom = true
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1
+  zoom = clampZoom(zoom * Math.exp(-event.deltaY * unit * 0.008))
+  place(anchor)
+}, { capture: true, passive: false })
+
+let pinchStart = 1
+window.addEventListener('gesturestart', (event) => {
+  if (!overMap(event)) return
+  event.preventDefault()
+  pinchStart = zoom
+}, { passive: false })
+window.addEventListener('gesturechange', (event) => {
+  if (!overMap(event)) return
+  event.preventDefault()
+  const anchor = pointerAnchor(event.clientX, event.clientY)
+  userZoom = true
+  zoom = clampZoom(pinchStart * event.scale)
+  place(anchor)
+}, { passive: false })
+
+window.addEventListener('resize', () => {
+  if (board.hidden || userZoom) return
+  fitZoom(false)
+})
+
+document.addEventListener('keydown', (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey) return
+  const tag = document.activeElement?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (board.hidden) return
+  if (event.key === '+' || event.key === '=') {
+    event.preventDefault()
+    nudgeZoom(1)
+  } else if (event.key === '-' || event.key === '_') {
+    event.preventDefault()
+    nudgeZoom(-1)
+  } else if (event.key === '0') {
+    event.preventDefault()
+    userZoom = false
+    fitZoom(true)
+  }
+})
 
 function showProjectDialog() {
   setDialogStatus('')

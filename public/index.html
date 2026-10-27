@@ -55,6 +55,12 @@
       <button id="open" type="button" class="primary">Choose folder</button>
     </div>
     <main id="board" hidden></main>
+    <div id="zoom" class="zoom" hidden>
+      <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+      <span id="zoom-level">100%</span>
+      <button id="zoom-fit" type="button">Fit</button>
+      <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+    </div>
     <article id="doc" class="doc" aria-hidden="true"></article>
 
     <dialog id="viewer">
@@ -140,6 +146,6 @@
         </div>
       </form>
     </dialog>
-    <script src="/app.js?v=6" type="module"></script>
+    <script src="/app.js?v=11" type="module"></script>
   </body>
 </html>

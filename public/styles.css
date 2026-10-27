@@ -307,6 +307,7 @@ label {
 .journey-finish,
 .journey-note,
 .card .stat,
+.caption .stat,
 .doc-stat,
 .doc-note {
   margin: 0;
@@ -329,6 +330,45 @@ label {
 }
 
 #board { padding: 0 0 48px; }
+
+.zoom {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--tc-line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(21, 32, 43, 0.12);
+}
+
+#zoom[hidden] { display: none !important; }
+
+.zoom button {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.zoom span {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tc-muted);
+}
+
+.stage {
+  position: relative;
+  margin: 20px 28px 48px;
+  overflow: hidden;
+}
 
 .journeys {
   display: flex;
@@ -366,9 +406,11 @@ label {
 }
 
 .canvas {
+  --z: 1;
   position: relative;
-  margin: 20px 28px;
+  margin: 0;
   min-height: 280px;
+  transform-origin: top left;
 }
 
 .canvas svg {
@@ -383,12 +425,19 @@ label {
 .lane-label {
   position: absolute;
   left: 0;
-  width: 140px;
+  width: 148px;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--tc-muted);
+}
+
+.captions {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .lane-wash {
@@ -407,9 +456,10 @@ label {
   position: absolute;
   width: 280px;
   background: #fff;
-  border-radius: 16px;
+  border-radius: 16px 16px 0 0;
   overflow: hidden;
   border: 1px solid var(--tc-line);
+  border-bottom: 0;
   display: flex;
   flex-direction: column;
   cursor: pointer;
@@ -434,9 +484,22 @@ label {
 
 .shot img { width: 100%; height: auto; display: block; }
 
-.card .meta { padding: 12px 16px 14px; }
+.caption {
+  position: absolute;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid var(--tc-line);
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+  padding: 12px 16px 14px;
+  pointer-events: auto;
+  cursor: pointer;
+}
 
-.card strong {
+.caption:hover { border-color: rgba(21, 32, 43, 0.28); }
+
+.card strong,
+.caption strong {
   display: block;
   font-size: 14px;
   font-weight: 600;
@@ -444,7 +507,9 @@ label {
 }
 
 .card .route,
-.card .evidence {
+.card .evidence,
+.caption .route,
+.caption .evidence {
   margin: 4px 0 0;
   color: var(--tc-muted);
   font-size: 12px;
@@ -677,7 +742,7 @@ dialog::backdrop { background: rgba(21, 32, 43, 0.35); }
 }
 
 @media print {
-  .top, .empty, #board, dialog { display: none !important; }
+  .top, .empty, #board, .zoom, dialog { display: none !important; }
   body { background: #fff !important; }
   .doc { display: block !important; color: #15202b; }
   .doc-shot { border-radius: 0; }
