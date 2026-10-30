@@ -53,10 +53,29 @@ function send(res, status, body, type = 'application/json') {
   const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)
   res.writeHead(status, {
     'content-type': type,
-    'access-control-allow-origin': '*',
     'cache-control': 'no-store',
   })
   res.end(data)
+}
+
+const HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`])
+const ORIGINS = new Set([...HOSTS].map((host) => `http://${host}`))
+
+/** The Figma plugin reads from a sandbox whose origin is `null`. */
+function figmaRead(req, url) {
+  return req.method === 'GET' && (url.pathname === '/api/figma' || url.pathname.startsWith('/shots/'))
+}
+
+/**
+ * Any page open in the browser can send requests to this port. Only FlowMap's own
+ * page, the Figma plugin, and non-browser callers may use it; a Host check stops
+ * DNS rebinding.
+ */
+function allowed(req, url) {
+  if (!HOSTS.has(req.headers.host || '')) return false
+  const origin = req.headers.origin
+  if (!origin || ORIGINS.has(origin)) return true
+  return origin === 'null' && figmaRead(req, url)
 }
 
 function readBody(req) {
@@ -128,9 +147,11 @@ function figmaDoc() {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') return send(res, 204, '')
   try {
     const url = new URL(req.url || '/', `http://${HOST}:${PORT}`)
+    if (!allowed(req, url)) return send(res, 403, { ok: false, error: 'Request blocked' })
+    if (req.method === 'OPTIONS') return send(res, 204, '')
+    if (figmaRead(req, url)) res.setHeader('access-control-allow-origin', '*')
     if ((await handleAnalytics(req, res, url, { send, readBody, getSession: () => session, port: PORT })) !== false) return
     if (req.method === 'GET' && url.pathname === '/api/health') return send(res, 200, { ok: true })
     if (req.method === 'GET' && url.pathname === '/api/figma') return send(res, 200, figmaDoc())
