@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/preflight.css" />
   </head>
   <body>
     <header class="top">
@@ -44,6 +45,7 @@
             <button id="switch-account" type="button">Switch account</button>
           </div>
         </div>
+        <button id="check" type="button" disabled title="Check security, accessibility, phones and leftovers before you share">Check</button>
         <button id="pdf" type="button" disabled>Save as PDF</button>
         <button id="figma" type="button" disabled>Export to Figma</button>
       </div>
@@ -146,6 +148,36 @@
         </div>
       </form>
     </dialog>
-    <script src="/app.js?v=11" type="module"></script>
+    <dialog id="preflight" class="pf-panel" aria-labelledby="preflight-verdict">
+      <form method="dialog">
+        <header class="pf-head">
+          <div>
+            <p class="viewer-kicker">Designer Preflight</p>
+            <h2 id="preflight-verdict">Not checked yet</h2>
+            <p id="preflight-summary"></p>
+          </div>
+          <button value="cancel">Close</button>
+        </header>
+        <div class="pf-tools">
+          <div class="row">
+            <button id="preflight-scan" type="button">Run checks</button>
+            <button id="preflight-baseline" type="button" title="Save pictures of every screen before anything changes">Take “before” pictures</button>
+            <button id="preflight-compare" type="button" title="Compare the screens now with the “before” pictures">Compare with before</button>
+          </div>
+          <div class="row pf-agent">
+            <label>
+              AI agent
+              <select id="agent"></select>
+            </label>
+            <button id="agent-propose" type="button" title="The agent reviews the code and adds anything the automatic checks missed. It changes nothing.">Ask for a review</button>
+            <button id="agent-apply" type="button" class="primary" disabled title="The agent fixes only what you approved, on a separate branch, one group at a time">Fix what I approved</button>
+          </div>
+          <p id="preflight-status" class="status" role="status"></p>
+          <pre id="preflight-log" class="pf-log" hidden></pre>
+        </div>
+        <div id="preflight-body" class="pf-body"></div>
+      </form>
+    </dialog>
+    <script src="/app.js?v=13" type="module"></script>
   </body>
 </html>

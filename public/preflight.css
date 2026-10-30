@@ -1,0 +1,98 @@
+#check[data-verdict="NO-SHIP"] { border-color: #c2410c; color: #9a3412; }
+#check[data-verdict="PASS WITH RISKS"] { border-color: #b45309; color: #92400e; }
+#check[data-verdict="PASS"] { border-color: #15803d; color: #166534; }
+
+.pf-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+
+.pf-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.pf-badge.p0 { background: #fff1ec; border-color: #f4b8a4; color: #9a3412; }
+.pf-badge.p1 { background: #fff8eb; border-color: #f2d19b; color: #92400e; }
+.pf-badge.p2 { color: var(--tc-muted); }
+
+dialog.pf-panel {
+  width: min(760px, calc(100vw - 40px));
+  max-width: none;
+  height: calc(100vh - 40px);
+  max-height: none;
+  margin: 20px 20px 20px auto;
+  padding: 0;
+  border: 1px solid var(--tc-line);
+  border-radius: 16px;
+  color: var(--tc-ink);
+  box-shadow: 0 16px 50px rgba(21, 32, 43, 0.16);
+}
+
+.pf-panel form { display: flex; flex-direction: column; height: 100%; margin: 0; }
+
+.pf-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--tc-line);
+}
+.pf-head h2 { margin: 2px 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.pf-head h2[data-verdict="NO-SHIP"] { color: #9a3412; }
+.pf-head h2[data-verdict="PASS"] { color: #166534; }
+.pf-head p { margin: 0; color: var(--tc-muted); }
+.pf-head > button { margin-left: auto; flex-shrink: 0; }
+
+.pf-tools { display: grid; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--tc-line); background: var(--tc-wash); }
+.pf-tools .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.pf-agent label { display: grid; gap: 4px; font-size: 12px; color: var(--tc-muted); }
+.pf-agent select { min-width: 180px; padding: 7px 8px; border: 1px solid var(--tc-line); border-radius: 8px; font: inherit; font-size: 14px; }
+.pf-log {
+  margin: 0;
+  max-height: 140px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--tc-line);
+  border-radius: 8px;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+.pf-log[hidden] { display: none; }
+
+.pf-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 20px 24px; }
+.pf-section { margin-top: 16px; }
+.pf-section h3,
+.pf-section > summary { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+details.pf-section > summary { cursor: pointer; }
+.pf-section ul { margin: 0; padding-left: 18px; color: var(--tc-muted); }
+.pf-intro { margin: 0 0 10px; color: var(--tc-muted); }
+
+.pf-filter { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 12px; background: var(--tc-wash); border-radius: 10px; }
+
+.pf-finding {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--tc-line);
+  border-left: 4px solid var(--tc-line);
+  border-radius: 10px;
+}
+.pf-finding.p0 { border-left-color: #c2410c; }
+.pf-finding.p1 { border-left-color: #d97706; }
+.pf-finding h4 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.pf-finding p { margin: 0 0 6px; color: var(--tc-muted); font-size: 14px; }
+.pf-finding .pf-fix { color: var(--tc-ink); }
+.pf-finding .pf-meta { font-size: 12px; }
+.pf-details summary { font-size: 12px; color: var(--tc-muted); cursor: pointer; }
+.pf-details pre { margin: 6px 0 0; padding: 8px; overflow: auto; background: var(--tc-wash); border-radius: 6px; font-size: 11px; white-space: pre-wrap; }
+.pf-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.pf-actions input { flex: 1; min-width: 200px; font-family: inherit; font-size: 14px; }
+.pf-state { font-size: 13px; color: var(--tc-muted); }
+
+.pf-compare { margin-bottom: 18px; }
+.pf-compare .pf-meta { margin: 0 0 6px; color: var(--tc-muted); }
+.pf-images { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pf-images figure { margin: 0; }
+.pf-images img { width: 100%; max-height: 360px; object-fit: cover; object-position: top; border: 1px solid var(--tc-line); border-radius: 6px; background: #fff; }
+.pf-images figcaption { font-size: 12px; color: var(--tc-muted); margin-top: 2px; }

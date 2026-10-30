@@ -1,3 +1,5 @@
+import { badgeHeight, badgeRow, initPreflight, loadPreflight, resetPreflight } from './preflight.js?v=1'
+
 const pathInput = document.querySelector('#path')
 const statusEl = document.querySelector('#status')
 const dialogStatus = document.querySelector('#dialog-status')
@@ -93,7 +95,7 @@ function cardHeight(step, flow) {
   const lines = [stat?.leave, stat?.unhappy].filter(Boolean).length
   const meter = stat?.reachCount ? 34 : 0
   const chips = step.gestures?.length ? 28 : 0
-  return cardBodyHeight(step) + 58 + meter + chips + lines * 18
+  return cardBodyHeight(step) + 58 + meter + chips + lines * 18 + badgeHeight(step)
 }
 
 function laneMetrics(flow, captions, bodies) {
@@ -541,6 +543,8 @@ function render(flows) {
       meta.append(meter)
     }
     for (const line of [stat?.leave, stat?.unhappy].filter(Boolean)) meta.append(el('p', 'stat', line))
+    const badges = badgeRow(step)
+    if (badges) meta.append(badges)
     card.append(shot)
     canvas.appendChild(card)
     captionsLayer.appendChild(meta)
@@ -789,6 +793,7 @@ function showProjectDialog() {
 
 document.querySelector('#open').onclick = showProjectDialog
 projectBtn.onclick = showProjectDialog
+initPreflight({ getSession: () => session, rerender: () => session && render(session.flows) })
 
 document.querySelector('#pick').onclick = async () => {
   setDialogStatus('Opening folder picker…')
@@ -812,6 +817,7 @@ async function captureVisuals() {
     render(session.flows)
     const failed = res.flows.flatMap((flow) => flow.steps).find((step) => step.shotError && !step.shotId)
     setStatus(failed ? failed.shotError : '', Boolean(failed))
+    await loadPreflight()
   } catch (err) {
     setStatus(err.message, true)
   } finally {
@@ -826,6 +832,7 @@ mapBtn.onclick = async () => {
   setDialogStatus('Reading the project and tracing paths…')
   try {
     session = await post('/api/map', { path: folder })
+    resetPreflight()
     activeId = session.flows[0]?.id ?? null
     choices.changes = {}
     metricsBoard = null
@@ -837,7 +844,7 @@ mapBtn.onclick = async () => {
     openDialog.close()
     setDialogStatus('')
     setStatus(`${session.stats.screens} screens`)
-    await Promise.all([captureVisuals(), presentAnalytics()])
+    await Promise.all([captureVisuals(), presentAnalytics(), loadPreflight()])
   } catch (err) {
     setDialogStatus(err.message, true)
   } finally {

@@ -158,7 +158,27 @@ async function concreteRoute(page, baseUrl, route) {
   return { path: route, fallback: true }
 }
 
-export async function captureRoutes(baseUrl, routes) {
+/** Named sizes match designer-preflight's, so screenshots line up between the two tools. */
+export const VIEWPORTS = {
+  desktop: { width: 1440, height: 900, deviceScaleFactor: 1 },
+  tablet: { width: 768, height: 1024, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
+  iphone: { width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1' },
+  android: { width: 412, height: 915, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36' },
+}
+
+/** `iphone`, `android`, `tablet`, `desktop`, or `WIDTHxHEIGHT` such as `390x844`. */
+export function parseViewport(value) {
+  if (!value) return VIEWPORTS.desktop
+  if (typeof value === 'object') return value
+  if (VIEWPORTS[value]) return VIEWPORTS[value]
+  const m = String(value).match(/^(\d{3,4})x(\d{3,4})$/)
+  if (!m) throw new Error(`Unknown viewport "${value}". Use iphone, android, tablet, desktop or WIDTHxHEIGHT.`)
+  const width = Number(m[1])
+  return { width, height: Number(m[2]), deviceScaleFactor: width < 800 ? 2 : 1, isMobile: width < 800, hasTouch: width < 800 }
+}
+
+export async function captureRoutes(baseUrl, routes, { viewport } = {}) {
+  const size = parseViewport(viewport)
   const executablePath = chromePath()
   if (!executablePath) throw new Error('Google Chrome was not found. Install Chrome or set CHROME_PATH.')
   const browser = await puppeteer.launch({
@@ -171,7 +191,8 @@ export async function captureRoutes(baseUrl, routes) {
   const resolved = {}
   try {
     const page = await browser.newPage()
-    await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 })
+    if (size.userAgent) await page.setUserAgent(size.userAgent)
+    await page.setViewport({ width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor || 1, isMobile: Boolean(size.isMobile), hasTouch: Boolean(size.hasTouch) })
     for (const route of [...new Set(routes)]) {
       try {
         const concrete = await concreteRoute(page, baseUrl, route)
@@ -180,8 +201,8 @@ export async function captureRoutes(baseUrl, routes) {
         await page.goto(joinUrl(baseUrl, concrete.path), { waitUntil: 'load', timeout: 15_000 })
         await new Promise((r) => setTimeout(r, 300))
         const scrollHeight = await page.evaluate(() => Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0))
-        const height = Math.min(Math.max(scrollHeight, 900), 2200)
-        const png = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: 1440, height } })
+        const height = Math.min(Math.max(scrollHeight, size.height), Math.round(size.height * 2.45))
+        const png = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: size.width, height }, captureBeyondViewport: true })
         images[route] = png
       } catch (err) {
         images[route] = { error: err instanceof Error ? err.message : String(err) }

@@ -7,9 +7,12 @@
     "node": ">=18"
   },
   "description": "Map the paths through a local app and export the journey.",
+  "bin": {
+    "flowmap": "bin/flowmap.js"
+  },
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test server/lib/analytics/analytics.test.js"
+    "test": "node --test server/lib/analytics/analytics.test.js server/lib/preflight.test.js"
   },
   "dependencies": {
     "puppeteer-core": "^24.15.0"

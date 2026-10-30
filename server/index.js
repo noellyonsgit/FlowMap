@@ -3,12 +3,11 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { captureRoutes, ensureServer, projectName } from './lib/capture.js'
-import { detectAnalytics } from './lib/analytics/detect.js'
-import { attachChanges } from './lib/analytics/changes.js'
+import { listAgents, skillPath, startAgent } from './lib/agents.js'
 import { handleAnalytics } from './lib/analytics/http.js'
-import { assemble, detectFramework, mapProject } from './lib/map.js'
-import { readPackage, readProject } from './lib/readProject.js'
+import { cancelJob, getJob } from './lib/jobs.js'
+import { captureFlows, mapFolder } from './lib/pipeline.js'
+import { mark, readState, screenshotPath, startBaseline, startCompare, startScan } from './lib/preflight.js'
 
 const PORT = Number(process.env.FLOWMAP_PORT || 3920)
 const HOST = '127.0.0.1'
@@ -19,35 +18,6 @@ const PUBLIC = path.join(ROOT, 'public')
 let session = null
 /** @type {Map<string, Buffer>} */
 const shots = new Map()
-
-/** A `[id]` screen the live site never links, once a real sibling address was found. */
-function dropUnvisited(flow) {
-  const heads = new Set(
-    flow.steps.filter((step) => step.resolvedFrom).map((step) => step.resolvedFrom.split('/').filter(Boolean)[0]),
-  )
-  const drop = new Set(
-    flow.steps
-      .filter((step) => step.kind === 'happy' && step.route?.includes('[') && heads.has(step.route.split('/').filter(Boolean)[0]))
-      .map((step) => step.id),
-  )
-  if (!drop.size) return
-  for (const step of flow.steps) {
-    if (step.kind === 'unhappy' && flow.edges.some((edge) => drop.has(edge.from) && edge.to === step.id)) drop.add(step.id)
-  }
-  for (const id of drop) {
-    const incoming = flow.edges.filter((edge) => edge.to === id && !drop.has(edge.from))
-    const outgoing = flow.edges.filter((edge) => edge.from === id && !drop.has(edge.to))
-    for (const edge of incoming) {
-      for (const out of outgoing) {
-        if (!flow.edges.some((item) => item.from === edge.from && item.to === out.to)) {
-          flow.edges.push({ id: `edge-${edge.from}-${out.to}`, from: edge.from, to: out.to })
-        }
-      }
-    }
-  }
-  flow.steps = flow.steps.filter((step) => !drop.has(step.id))
-  flow.edges = flow.edges.filter((edge) => !drop.has(edge.from) && !drop.has(edge.to))
-}
 
 function send(res, status, body, type = 'application/json') {
   const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)
@@ -146,6 +116,50 @@ function figmaDoc() {
   }
 }
 
+/** Pre-flight checks run by Designer Preflight, shown on the board. FlowMap never edits the project itself. */
+async function handlePreflight(req, res, url) {
+  if (req.method === 'GET' && url.pathname === '/api/jobs') {
+    const job = getJob(url.searchParams.get('id') || '')
+    return job ? send(res, 200, { ok: true, job }) : send(res, 404, { ok: false, error: 'No such job' })
+  }
+  if (req.method === 'POST' && url.pathname === '/api/jobs/cancel') {
+    const body = await readBody(req)
+    return send(res, 200, { ok: cancelJob(body.id) })
+  }
+  if (req.method === 'GET' && url.pathname === '/api/agents') return send(res, 200, { ok: true, agents: listAgents(), skill: Boolean(skillPath()) })
+  if (!session) throw new Error('Map a project in FlowMap first')
+  const folder = session.project.path
+  if (req.method === 'POST' && url.pathname === '/api/agents/run') {
+    const body = await readBody(req)
+    const job = startAgent(body.agent, body.mode, folder)
+    return send(res, 200, { ok: true, jobId: job.id })
+  }
+  if (req.method === 'GET' && url.pathname === '/api/preflight') return send(res, 200, readState(folder, session.flows))
+  if (req.method === 'GET' && url.pathname === '/api/preflight/shot') {
+    const file = screenshotPath(folder, url.searchParams.get('path') || '')
+    return file ? send(res, 200, fs.readFileSync(file), 'image/png') : send(res, 404, { ok: false, error: 'Screenshot not found' })
+  }
+  if (req.method === 'POST') {
+    const body = await readBody(req)
+    const liveUrl = body.url || session.project.liveUrl
+    const start = { '/api/preflight/scan': startScan, '/api/preflight/baseline': startBaseline, '/api/preflight/compare': startCompare }[url.pathname]
+    if (start) {
+      try {
+        const job = start(folder, { url: liveUrl })
+        return send(res, 200, { ok: true, jobId: job.id })
+      } catch (err) {
+        if (err.code === 'NOT_INSTALLED') return send(res, 200, { ok: false, notInstalled: true, error: err.message })
+        throw err
+      }
+    }
+    if (url.pathname === '/api/preflight/mark') {
+      if (!Array.isArray(body.keys) || !['approved', 'accepted-risk', 'open'].includes(body.status)) throw new Error('Choose findings and a decision')
+      return send(res, 200, { ok: true, ...mark(folder, body.keys, body.status, body.note) })
+    }
+  }
+  return send(res, 404, { ok: false, error: 'Not found' })
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${HOST}:${PORT}`)
@@ -176,62 +190,29 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/map') {
       const body = await readBody(req)
-      const folder = assertDir(body.path)
-      const pkg = readPackage(folder)
-      const files = readProject(folder)
-      const framework = detectFramework(pkg, files)
-      const analytics = detectAnalytics(files, folder)
-      const map = mapProject(files, framework.id)
-      const flows = assemble(map)
-      attachChanges(folder, flows)
-      const { events, ...publicAnalytics } = analytics
-      session = {
-        project: { path: folder, name: projectName(folder, pkg), framework: framework.name, frameworkId: framework.id, guessedUrl: framework.url, analytics: publicAnalytics },
-        map,
-        flows,
-        events,
-      }
-      return send(res, 200, {
-        ok: true,
-        project: session.project,
-        map,
-        flows,
-        stats: { files: Object.keys(files).length, screens: map.screens.length, links: map.links.length },
-      })
+      const { stats, ...mapped } = mapFolder(assertDir(body.path))
+      session = mapped
+      return send(res, 200, { ok: true, project: session.project, map: session.map, flows: session.flows, stats })
     }
     if (req.method === 'POST' && url.pathname === '/api/capture') {
       const body = await readBody(req)
       if (!session) throw new Error('Map the project before capturing')
-      const folder = assertDir(body.path || session.project.path)
-      const framework = { id: session.project.frameworkId }
-      const handle = await ensureServer(folder, framework, body.url)
-      const routes = [...new Set(session.flows.flatMap((f) => f.steps.map((s) => s.route).filter(Boolean)))]
-      const taken = await captureRoutes(handle.url, routes)
+      const project = { ...session.project, path: assertDir(body.path || session.project.path) }
       let i = 0
-      for (const flow of session.flows) {
-        for (const step of flow.steps) {
-          const original = step.route
-          const concrete = taken.resolved[original]
-          const shot = taken.images[original]
-          if (concrete && !concrete.fallback && concrete.path !== original) {
-            step.route = concrete.path
-            step.resolvedFrom = original
-          }
-          if (Buffer.isBuffer(shot)) {
-            const id = `s${++i}`
-            shots.set(id, shot)
-            step.shotId = id
-            step.shotW = shot.readUInt32BE(16)
-            step.shotH = shot.readUInt32BE(20)
-            step.shotError = undefined
-          } else if (shot && shot.error) {
-            step.shotError = shot.error
-          }
-        }
-        dropUnvisited(flow)
-      }
-      session.project.liveUrl = handle.url
-      return send(res, 200, { ok: true, liveUrl: handle.url, flows: session.flows })
+      const { liveUrl } = await captureFlows(project, session.flows, {
+        url: body.url,
+        onShot: (_step, png) => {
+          const id = `s${++i}`
+          shots.set(id, png)
+          return id
+        },
+      })
+      session.project.liveUrl = liveUrl
+      return send(res, 200, { ok: true, liveUrl, flows: session.flows })
+    }
+
+    if (['/api/preflight', '/api/jobs', '/api/agents'].some((prefix) => url.pathname.startsWith(prefix))) {
+      return await handlePreflight(req, res, url)
     }
 
     const file = req.method === 'GET' ? publicFile(url.pathname) : null
