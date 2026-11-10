@@ -475,6 +475,33 @@ label {
 
 #zoom[hidden] { display: none !important; }
 
+.credit {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 30;
+  margin: 0;
+  color: var(--tc-muted);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+}
+
+.credit a {
+  color: inherit;
+  pointer-events: auto;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(21, 32, 43, 0.28);
+}
+
+@media (hover: hover) {
+  .credit a:hover {
+    color: var(--tc-ink);
+    text-decoration-color: rgba(21, 32, 43, 0.55);
+  }
+}
+
 .zoom button {
   min-width: 36px;
   height: 36px;
@@ -978,7 +1005,7 @@ dialog::backdrop { background: rgba(21, 32, 43, 0.35); }
 }
 
 @media print {
-  .top, .empty, #board, .zoom, .link-tip, dialog { display: none !important; }
+  .top, .empty, #board, .zoom, .credit, .link-tip, dialog { display: none !important; }
   body { background: #fff !important; }
   .doc { display: block !important; color: #15202b; }
   .doc-shot { border-radius: 0; }
