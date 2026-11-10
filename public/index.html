@@ -52,18 +52,20 @@
       </div>
     </header>
 
-    <div id="empty" class="empty">
-      <h1>Map a local app</h1>
-      <p>FlowMap reads the routes, photographs each screen, and lays the visits on the path.</p>
-      <button id="open" type="button" class="primary">Choose folder</button>
-    </div>
-    <main id="board" hidden></main>
-    <div id="zoom" class="zoom" hidden>
+    <main>
+      <div id="empty" class="empty">
+        <h1>Map a local app</h1>
+        <p>FlowMap reads the routes, photographs each screen, and lays the visits on the path.</p>
+        <button id="open" type="button" class="primary">Choose folder</button>
+      </div>
+      <div id="board" hidden></div>
+    </main>
+    <nav id="zoom" class="zoom" aria-label="Zoom" hidden>
       <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
       <span id="zoom-level">100%</span>
       <button id="zoom-fit" type="button">Fit</button>
       <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
-    </div>
+    </nav>
     <div id="link-tip" class="link-tip" hidden></div>
     <dialog id="ease-sheet" class="sheet ease-sheet">
       <form method="dialog">
