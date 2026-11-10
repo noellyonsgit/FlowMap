@@ -4,9 +4,10 @@ export const WRONG_ACCOUNT = "This account can't see that site. Switch to the Go
 export const NOT_ENOUGH = 'Not enough days of visits since this change to compare yet.'
 export const DROP_OFF_UNREAD = 'How many people leave along this path could not be read. Time on each screen is still shown.'
 
-export function analyticsLine({ measurementId, gtmId } = {}) {
+export function analyticsLine({ measurementId, gtmId, googleTagId } = {}) {
   if (measurementId) return 'This app records visits with Google Analytics.'
   if (gtmId) return 'This app records visits with Google Tag Manager. Connect Google and choose the site.'
+  if (googleTagId) return 'This app records visits with a Google tag. Connect Google and choose the Analytics site.'
   return "We couldn't see a visitor counter in the project. Connect Google and choose the site."
 }
 

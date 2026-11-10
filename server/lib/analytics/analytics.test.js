@@ -9,8 +9,10 @@ import { attachChanges, groupCommits, parseChangelog, parseGitLog, plainSubject 
 import { detectAnalytics, eventForEvidence } from './detect.js'
 import { describeFlow } from './metrics.js'
 import { pathMatches, patternToRegExp, visitsCollapsed } from './match.js'
-import { assemble, mapProject, routePattern } from '../map.js'
+import { assemble, detectFramework, mapProject, routeOf, routePattern } from '../map.js'
+import { resolveWebApp } from '../readProject.js'
 import { comparisonFor, defaultChangeId } from './windows.js'
+import { mapFolder } from '../pipeline.js'
 
 test('route patterns match real product addresses', () => {
   assert.equal(routePattern('/prints/[id]'), '/prints/*')
@@ -19,6 +21,34 @@ test('route patterns match real product addresses', () => {
   assert.equal(pathMatches('/prints/abc/extra', '/prints/*'), false)
   assert.equal(pathMatches('/Checkout/', '/checkout'), true)
   assert.equal(pathMatches('/', '/'), true)
+})
+
+test('nested frontend app routes and ports resolve', () => {
+  assert.equal(routeOf('frontend/app/(dashboard)/projects/page.tsx'), '/projects')
+  assert.equal(routeOf('frontend/app/page.tsx'), '/')
+  const fw = detectFramework(
+    { dependencies: { next: '14' }, scripts: { dev: 'next dev -p 3020' } },
+    { 'app/page.tsx': 'export default function Page(){return null}' },
+  )
+  assert.equal(fw.id, 'next')
+  assert.equal(fw.url, 'http://127.0.0.1:3020')
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flowmap-mono-'))
+  fs.mkdirSync(path.join(root, 'frontend', 'app', 'login'), { recursive: true })
+  fs.writeFileSync(
+    path.join(root, 'frontend', 'package.json'),
+    JSON.stringify({ name: 'web', dependencies: { next: '14' }, scripts: { dev: 'next dev -p 3020' } }),
+  )
+  fs.writeFileSync(path.join(root, 'frontend', 'app', 'page.tsx'), 'export default function Page(){ return <a href="/login">In</a> }\n')
+  fs.writeFileSync(path.join(root, 'frontend', 'app', 'login', 'page.tsx'), 'export default function Login(){ return <h1>Login</h1> }\n')
+  const resolved = resolveWebApp(root)
+  assert.equal(resolved.relative, 'frontend')
+  const mapped = mapFolder(root)
+  assert.equal(mapped.project.frameworkId, 'next')
+  assert.equal(mapped.project.guessedUrl, 'http://127.0.0.1:3020')
+  assert.ok(mapped.map.screens.some((screen) => screen.route === '/'))
+  assert.ok(mapped.map.screens.some((screen) => screen.route === '/login'))
+  fs.rmSync(root, { recursive: true, force: true })
 })
 
 test('analytics detection reads tags and nearby events', () => {
@@ -160,10 +190,31 @@ test('named routes and essay slugs become screens', () => {
   const map = mapProject(files, 'vite')
   const routes = map.screens.map((screen) => screen.route).sort()
   assert.deepEqual(routes, ['/', '/research/how-design-teams-work-2026', '/writing/the-enterprise-design-telemetry-crisis', '/writing/we-dont-have-to-be-boring'])
+  const essays = map.screens.filter((screen) => screen.route.startsWith('/writing/'))
+  assert.equal(essays.length, 2)
+  for (const essay of essays) assert.equal(essay.pattern, essay.route)
   const flows = assemble(map)
   const research = flows.find((flow) => flow.steps.some((step) => step.route === '/research/how-design-teams-work-2026'))
   assert.ok(research)
   assert.equal(research.steps[0].route, '/')
+  const writing = flows.find((flow) => flow.steps.some((step) => step.route.startsWith('/writing/')))
+  assert.ok(writing)
+  const described = describeFlow(
+    writing,
+    {
+      pages: [
+        { path: '/writing/the-enterprise-design-telemetry-crisis', views: 10, duration: 100, sessions: 10 },
+        { path: '/writing/we-dont-have-to-be-boring', views: 47, duration: 470, sessions: 47 },
+      ],
+      events: [],
+      summary: { sessions: 57, bounceRate: 0.4, averageSessionDuration: 80 },
+    },
+    null,
+  )
+  const a = writing.steps.find((step) => step.route === '/writing/the-enterprise-design-telemetry-crisis')
+  const b = writing.steps.find((step) => step.route === '/writing/we-dont-have-to-be-boring')
+  assert.equal(described.steps[a.id].reachCount, 10)
+  assert.equal(described.steps[b.id].reachCount, 47)
 })
 
 test('a screen shows how many visits reached it', () => {

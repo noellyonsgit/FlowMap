@@ -4,6 +4,7 @@ import { analyticsLine } from './format.js'
 
 const MEASUREMENT = /\b(G-[A-Z0-9]{6,12})\b/g
 const GTM = /\b(GTM-[A-Z0-9]+)\b/g
+const GOOGLE_TAG = /\b(GT-[A-Z0-9]+)\b/g
 const EVENT_RES = [
   /gtag\(\s*['"]event['"]\s*,\s*['"]([A-Za-z][\w]{0,40})['"]/g,
   /posthog\.capture\(\s*['"]([A-Za-z][\w]{0,40})['"]/g,
@@ -32,6 +33,7 @@ function eventsIn(file, text) {
 function readEnvIds(root) {
   let measurementId = null
   let gtmId = null
+  let googleTagId = null
   for (const name of ['.env', '.env.local', '.env.production', '.env.development']) {
     let text = ''
     try {
@@ -41,26 +43,30 @@ function readEnvIds(root) {
     }
     measurementId = measurementId || firstMatch(text, MEASUREMENT)
     gtmId = gtmId || firstMatch(text, GTM)
+    googleTagId = googleTagId || firstMatch(text, GOOGLE_TAG)
   }
-  return { measurementId, gtmId }
+  return { measurementId, gtmId, googleTagId }
 }
 
 /** Measurement ID, Tag Manager container, and event names already in the project. */
 export function detectAnalytics(files, root) {
   let measurementId = null
   let gtmId = null
+  let googleTagId = null
   const events = []
   for (const [file, text] of Object.entries(files || {})) {
     if (!measurementId) measurementId = firstMatch(text, MEASUREMENT)
     if (!gtmId) gtmId = firstMatch(text, GTM)
+    if (!googleTagId) googleTagId = firstMatch(text, GOOGLE_TAG)
     events.push(...eventsIn(file, text))
   }
   if (root) {
     const env = readEnvIds(root)
     measurementId = measurementId || env.measurementId
     gtmId = gtmId || env.gtmId
+    googleTagId = googleTagId || env.googleTagId
   }
-  const analytics = { measurementId, gtmId, events }
+  const analytics = { measurementId, gtmId, googleTagId, events }
   analytics.line = analyticsLine(analytics)
   return analytics
 }

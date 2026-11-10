@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { listAgents, skillPath, startAgent } from './lib/agents.js'
 import { handleAnalytics } from './lib/analytics/http.js'
 import { cancelJob, getJob } from './lib/jobs.js'
+import { findFreePort } from './lib/capture.js'
 import { captureFlows, mapFolder } from './lib/pipeline.js'
 import { mark, readState, screenshotPath, startBaseline, startCompare, startScan } from './lib/preflight.js'
 
@@ -192,7 +193,14 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req)
       const { stats, ...mapped } = mapFolder(assertDir(body.path))
       session = mapped
-      return send(res, 200, { ok: true, project: session.project, map: session.map, flows: session.flows, stats })
+      return send(res, 200, {
+        ok: true,
+        project: session.project,
+        map: session.map,
+        flows: session.flows,
+        scores: session.scores,
+        stats,
+      })
     }
     if (req.method === 'POST' && url.pathname === '/api/capture') {
       const body = await readBody(req)
@@ -200,7 +208,11 @@ const server = http.createServer(async (req, res) => {
       const project = { ...session.project, path: assertDir(body.path || session.project.path) }
       let i = 0
       const { liveUrl } = await captureFlows(project, session.flows, {
-        url: body.url,
+        // Only an explicit URL (or prior liveUrl for this session). Never the framework guess.
+        url: body.url || undefined,
+        cookies: body.cookies,
+        email: body.email || undefined,
+        password: body.password || undefined,
         onShot: (_step, png) => {
           const id = `s${++i}`
           shots.set(id, png)
@@ -223,6 +235,32 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-server.listen(PORT, HOST, () => {
-  console.log(`[flowmap] http://${HOST}:${PORT}`)
+async function listen() {
+  const tryPort = async (port) =>
+    new Promise((resolve, reject) => {
+      const onError = (err) => {
+        server.off('listening', onListening)
+        reject(err)
+      }
+      const onListening = () => {
+        server.off('error', onError)
+        resolve(port)
+      }
+      server.once('error', onError)
+      server.once('listening', onListening)
+      server.listen(port, HOST)
+    })
+  try {
+    await tryPort(PORT)
+  } catch (err) {
+    if (err?.code !== 'EADDRINUSE') throw err
+    const free = await findFreePort()
+    await tryPort(free)
+  }
+  const bound = server.address()
+  console.log(`[flowmap] http://${HOST}:${bound.port}`)
+}
+listen().catch((err) => {
+  console.error(err)
+  process.exit(1)
 })

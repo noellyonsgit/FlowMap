@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { WRONG_ACCOUNT } from './format.js'
-import { eventRows, funnelRows, pageRows, parseReport } from './metrics.js'
+import { eventRows, funnelRows, pageRows, parseReport, transitionRows } from './metrics.js'
 import { patternToRegExp, visitsCollapsed } from './match.js'
 
 const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly'
@@ -252,28 +252,64 @@ async function listSites(token, measurementId) {
   return sites
 }
 
-function saveProperty(site) {
+function projectKeyOf(projectPath) {
+  return String(projectPath || '')
+    .replace(/\\/g, '/')
+    .replace(/\/+$/, '')
+    .toLowerCase()
+}
+
+function saveProperty(site, projectPath = '') {
   const saved = readToken() || {}
-  saved.property = publicSite(site)
+  const property = publicSite(site)
+  saved.property = property
+  if (projectPath) {
+    saved.propertyByProject = { ...(saved.propertyByProject || {}), [projectKeyOf(projectPath)]: property }
+  }
   writeToken(saved)
 }
 
-export function savedProperty() {
-  return readToken()?.property || null
+export function savedProperty(projectPath = '') {
+  const saved = readToken() || {}
+  const key = projectKeyOf(projectPath)
+  if (key && saved.propertyByProject?.[key]) return saved.propertyByProject[key]
+  return saved.property || null
 }
 
 export function isConnected() {
   return Boolean(readToken()?.refresh_token)
 }
 
-export async function resolveProperty(measurementId) {
+function rankSitesForProject(sites, projectHint = '') {
+  const hint = String(projectHint || '').toLowerCase()
+  if (!hint) return sites
+  const score = (site) => {
+    const hay = `${site.label || ''} ${site.url || ''}`.toLowerCase()
+    if (hint && hay.includes(hint)) return 0
+    if (/archivist|familytree|family-tree/.test(hint) && /archivist|familytree|family-tree/.test(hay)) return 1
+    return 5
+  }
+  return [...sites].sort((a, b) => score(a) - score(b) || String(a.label).localeCompare(String(b.label)))
+}
+
+export async function resolveProperty(measurementId, projectPath = '', projectHint = '') {
   const configured = Boolean(googleClient())
   const token = await accessToken()
   if (!token) return { configured, connected: false }
+  const key = projectKeyOf(projectPath)
+  const bound = key ? readToken()?.propertyByProject?.[key] : null
   const saved = readToken()?.property
-  if (saved && (!measurementId || saved.measurementId === measurementId)) {
+
+  // Prefer a site already chosen for this project folder.
+  if (bound && (!measurementId || !bound.measurementId || bound.measurementId === measurementId)) {
+    return { configured, connected: true, property: bound }
+  }
+  // Only reuse the global saved site when its measurement ID matches this project.
+  if (saved && measurementId && saved.measurementId === measurementId) {
+    if (projectPath) saveProperty(saved, projectPath)
     return { configured, connected: true, property: saved }
   }
+
   let sites = []
   try {
     sites = await listSites(token, measurementId || null)
@@ -281,26 +317,30 @@ export async function resolveProperty(measurementId) {
     if (err.status === 401 || err.status === 403) return { configured, connected: true, message: WRONG_ACCOUNT }
     throw err
   }
+  sites = rankSitesForProject(sites, projectHint || projectPath)
+
   if (measurementId) {
     const match = sites.find((site) => site.measurementId === measurementId)
-    if (!match) return { configured, connected: true, message: WRONG_ACCOUNT }
-    saveProperty(match)
+    if (!match) {
+      return { configured, connected: true, message: WRONG_ACCOUNT, needsChoice: true, sites: sites.map(publicSite) }
+    }
+    saveProperty(match, projectPath)
     return { configured, connected: true, property: publicSite(match) }
   }
   if (sites.length === 1) {
-    saveProperty(sites[0])
+    saveProperty(sites[0], projectPath)
     return { configured, connected: true, property: publicSite(sites[0]) }
   }
   return { configured, connected: true, needsChoice: true, sites: sites.map(publicSite) }
 }
 
-export async function chooseProperty(propertyId) {
+export async function chooseProperty(propertyId, projectPath = '') {
   const token = await accessToken()
   if (!token) throw new Error('Connect Google first')
   const sites = rememberedSites.length ? rememberedSites : await listSites(token)
   const site = sites.find((item) => item.id === propertyId)
   if (!site) throw new Error('Choose a site from the list')
-  saveProperty(site)
+  saveProperty(site, projectPath)
   return publicSite(site)
 }
 
@@ -379,7 +419,21 @@ export async function loadRange(token, propertyId, range, device, source, eventN
       events = []
     }
   }
-  return { pages, events, summary }
+  let transitions = []
+  try {
+    const transitionReport = await runReport(token, propertyId, {
+      dateRanges: [{ startDate: range.start, endDate: range.end }],
+      dimensions: [{ name: 'pageReferrer' }, { name: 'pagePath' }],
+      metrics: [{ name: 'sessions' }],
+      dimensionFilter: filter,
+      limit: '10000',
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+    })
+    transitions = transitionRows(transitionReport)
+  } catch {
+    transitions = []
+  }
+  return { pages, events, summary, transitions }
 }
 
 export async function loadFunnel(token, propertyId, range, device, source, steps) {

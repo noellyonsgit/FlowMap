@@ -46,7 +46,7 @@ dialog.pf-panel {
 .pf-tools { display: grid; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--tc-line); background: var(--tc-wash); }
 .pf-tools .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
 .pf-agent label { display: grid; gap: 4px; font-size: 12px; color: var(--tc-muted); }
-.pf-agent select { min-width: 180px; padding: 7px 8px; border: 1px solid var(--tc-line); border-radius: 8px; font: inherit; font-size: 14px; }
+.pf-agent select { min-width: 180px; padding: 7px 8px; border: 1px solid var(--tc-line); border-radius: 8px; font: inherit; font-size: 16px; }
 .pf-log {
   margin: 0;
   max-height: 140px;
@@ -87,7 +87,7 @@ details.pf-section > summary { cursor: pointer; }
 .pf-details summary { font-size: 12px; color: var(--tc-muted); cursor: pointer; }
 .pf-details pre { margin: 6px 0 0; padding: 8px; overflow: auto; background: var(--tc-wash); border-radius: 6px; font-size: 11px; white-space: pre-wrap; }
 .pf-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
-.pf-actions input { flex: 1; min-width: 200px; font-family: inherit; font-size: 14px; }
+.pf-actions input { flex: 1; min-width: 200px; font-family: inherit; font-size: 16px; }
 .pf-state { font-size: 13px; color: var(--tc-muted); }
 
 .pf-compare { margin-bottom: 18px; }

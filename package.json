@@ -12,7 +12,7 @@
   },
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test server/lib/analytics/analytics.test.js server/lib/preflight.test.js"
+    "test": "node --test server/lib/analytics/analytics.test.js server/lib/preflight.test.js server/lib/score/score.test.js server/lib/map.form-stages.test.js"
   },
   "dependencies": {
     "puppeteer-core": "^24.15.0"

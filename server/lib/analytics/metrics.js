@@ -184,6 +184,69 @@ export function eventRows(report) {
   }))
 }
 
+/** Same-site pageReferrer → pagePath pairs (proxy for link follows when GA records them). */
+export function transitionRows(report) {
+  return parseReport(report)
+    .map((row) => {
+      let from = ''
+      const raw = String(row.pageReferrer || '').trim()
+      if (!raw || raw === '(not set)' || raw === '(direct)') return null
+      try {
+        from = new URL(raw).pathname
+      } catch {
+        from = raw.startsWith('/') ? raw : ''
+      }
+      from = normalizePath(from)
+      const to = normalizePath(row.pagePath)
+      if (!from || !to || from === to) return null
+      return { from, to, count: Math.round(row.sessions || row.screenPageViews || 0) }
+    })
+    .filter(Boolean)
+}
+
+function normalizePath(pagePath) {
+  const path = String(pagePath || '').split(/[?#]/)[0].trim()
+  if (!path) return ''
+  const withSlash = path.startsWith('/') ? path : `/${path}`
+  return withSlash.length > 1 ? withSlash.replace(/\/+$/, '') : '/'
+}
+
+function transitionCount(transitions, from, to) {
+  let clicks = 0
+  for (const row of transitions) {
+    if (pathMatches(row.from, from.pattern || from.route) && pathMatches(row.to, to.pattern || to.route)) {
+      clicks += row.count || 0
+    }
+  }
+  return clicks
+}
+
+/** Match transition counts onto journey edges and projected page links. */
+export function attachLinkClicks(flows, transitions) {
+  if (!transitions?.length) return
+  for (const flow of flows || []) {
+    for (const edge of flow.edges || []) {
+      const from = flow.steps.find((step) => step.id === edge.from)
+      const to = flow.steps.find((step) => step.id === edge.to)
+      if (!from || !to || to.kind === 'unhappy') {
+        delete edge.clicks
+        continue
+      }
+      const clicks = transitionCount(transitions, from, to)
+      if (clicks > 0) edge.clicks = clicks
+      else delete edge.clicks
+    }
+    for (const link of flow.links || []) {
+      const from = flow.steps.find((step) => step.id === link.from)
+      const to = flow.steps.find((step) => step.id === link.to)
+      if (!from || !to) continue
+      const clicks = transitionCount(transitions, from, to)
+      if (clicks > 0) link.clicks = clicks
+      else delete link.clicks
+    }
+  }
+}
+
 export function funnelRows(report) {
   const table = report?.funnelTable
   if (!table) return null
