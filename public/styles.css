@@ -53,7 +53,7 @@ input {
   padding: 8px 10px;
   color: var(--tc-ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .top {
@@ -64,6 +64,7 @@ input {
   padding: 0 28px;
   border-bottom: 1px solid var(--tc-line);
   background: rgba(255, 255, 255, 0.94);
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -84,7 +85,9 @@ input {
   letter-spacing: -0.02em;
 }
 
-.project:hover { background: var(--tc-wash); }
+@media (hover: hover) {
+  .project:hover { background: var(--tc-wash); }
+}
 
 .empty {
   max-width: 420px;
@@ -283,7 +286,7 @@ label {
 .filter select {
   text-transform: none;
   font-family: Outfit, system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 16px;
   border: 1px solid var(--tc-line);
   background: #fff;
   border-radius: 8px;
@@ -503,6 +506,7 @@ label {
   top: 56px;
   z-index: 10;
   background: rgba(255, 255, 255, 0.94);
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--tc-line);
 }
@@ -581,9 +585,11 @@ label {
   cursor: help;
 }
 
-.canvas svg .link-hit:hover .link-count-bg {
-  fill: #fff;
-  stroke: rgba(21, 32, 43, 0.28);
+@media (hover: hover) {
+  .canvas svg .link-hit:hover .link-count-bg {
+    fill: #fff;
+    stroke: rgba(21, 32, 43, 0.28);
+  }
 }
 
 .canvas svg .link-count-bg {
@@ -691,7 +697,9 @@ label {
   cursor: pointer;
 }
 
-.card:hover { border-color: rgba(21, 32, 43, 0.28); }
+@media (hover: hover) {
+  .card:hover { border-color: rgba(21, 32, 43, 0.28); }
+}
 
 .card:focus-visible {
   outline: 2px solid var(--tc-ink);
@@ -722,7 +730,9 @@ label {
   cursor: pointer;
 }
 
-.caption:hover { border-color: rgba(21, 32, 43, 0.28); }
+@media (hover: hover) {
+  .caption:hover { border-color: rgba(21, 32, 43, 0.28); }
+}
 
 .card strong,
 .caption strong {
