@@ -4,6 +4,8 @@
 
 Point it at a local app. FlowMap reads the routes, builds the journeys people take, photographs each screen (including multi-step forms, overlays, and signed-in paths when you ask), lays visits on the path when Analytics is connected, scores how easy each path looks structurally, and lets you save a PDF or send the board to Figma. With [Designer Preflight](https://github.com/noellyonsgit/designer-preflight) installed, it also checks every screen before you share the app.
 
+![FlowMap board showing Paths, screen captures, and Happy path / When it goes wrong lanes](docs/flowmap-board.jpg)
+
 ## Run it
 
 You need [Node.js](https://nodejs.org/) 18 or newer, and [Google Chrome](https://www.google.com/chrome/).
