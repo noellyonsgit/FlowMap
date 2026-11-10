@@ -2,5 +2,6 @@ node_modules
 .DS_Store
 .env
 .env.*
+!.env.example
 client.json
 token.json
