@@ -45,6 +45,7 @@
             <button id="switch-account" type="button">Switch account</button>
           </div>
         </div>
+        <button id="open-site" type="button" hidden title="Open the running local app in a new tab">Open site</button>
         <button id="check" type="button" disabled title="Check security, accessibility, phones and leftovers before you share">Check</button>
         <button id="pdf" type="button" disabled>Save as PDF</button>
         <button id="figma" type="button" disabled>Export to Figma</button>
@@ -63,6 +64,19 @@
       <button id="zoom-fit" type="button">Fit</button>
       <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
     </div>
+    <div id="link-tip" class="link-tip" hidden></div>
+    <dialog id="ease-sheet" class="sheet ease-sheet">
+      <form method="dialog">
+        <div class="ease-sheet-head">
+          <div>
+            <p class="ease-sheet-kicker">Ease of use</p>
+            <h2 id="ease-sheet-title">Easy to use</h2>
+          </div>
+          <button value="cancel">Close</button>
+        </div>
+        <div id="ease-sheet-body"></div>
+      </form>
+    </dialog>
     <article id="doc" class="doc" aria-hidden="true"></article>
 
     <dialog id="viewer">
@@ -93,6 +107,19 @@
         <label>
           Project folder
           <input id="path" type="text" placeholder="/Users/you/Sites/my-app" spellcheck="false" />
+        </label>
+        <label>
+          App URL <span class="status">(if it’s already running)</span>
+          <input id="app-url" type="url" placeholder="http://127.0.0.1:4000" spellcheck="false" />
+        </label>
+        <p class="status" style="margin:0.75rem 0 0.35rem">Optional — photograph the logged-in app</p>
+        <label>
+          Email
+          <input id="login-email" type="email" autocomplete="username" placeholder="you@example.com" />
+        </label>
+        <label>
+          Password
+          <input id="login-password" type="password" autocomplete="current-password" placeholder="Local account password" />
         </label>
         <div class="row">
           <button id="pick" type="button">Choose folder</button>
@@ -178,6 +205,6 @@
         <div id="preflight-body" class="pf-body"></div>
       </form>
     </dialog>
-    <script src="/app.js?v=13" type="module"></script>
+    <script src="/app.js?v=35" type="module"></script>
   </body>
 </html>

@@ -1,6 +1,9 @@
 import { badgeHeight, badgeRow, initPreflight, loadPreflight, resetPreflight } from './preflight.js?v=1'
 
 const pathInput = document.querySelector('#path')
+const appUrlInput = document.querySelector('#app-url')
+const loginEmailInput = document.querySelector('#login-email')
+const loginPasswordInput = document.querySelector('#login-password')
 const statusEl = document.querySelector('#status')
 const dialogStatus = document.querySelector('#dialog-status')
 const board = document.querySelector('#board')
@@ -8,6 +11,16 @@ const empty = document.querySelector('#empty')
 const projectBtn = document.querySelector('#project')
 const openDialog = document.querySelector('#open-project')
 const mapBtn = document.querySelector('#map')
+
+try {
+  const savedLogin = JSON.parse(sessionStorage.getItem('flowmap-login') || 'null')
+  if (savedLogin?.email && loginEmailInput) loginEmailInput.value = savedLogin.email
+  const savedAppUrl = sessionStorage.getItem('flowmap-app-url')
+  if (savedAppUrl && appUrlInput) appUrlInput.value = savedAppUrl
+} catch {
+  /* ignore */
+}
+const openSiteBtn = document.querySelector('#open-site')
 const pdfBtn = document.querySelector('#pdf')
 const figmaBtn = document.querySelector('#figma')
 const help = document.querySelector('#figma-help')
@@ -44,10 +57,23 @@ let zoom = 1
 let userZoom = false
 let mapFlow = null
 
-function setStatus(text, error = false) {
-  statusEl.textContent = text || ''
-  statusEl.classList.toggle('error', error)
+function setStatus(text, error = false, action = null) {
+  statusEl.replaceChildren()
+  statusEl.classList.toggle('error', Boolean(error))
   statusEl.hidden = !text
+  if (!text) return
+  statusEl.append(document.createTextNode(text))
+  if (action?.label && typeof action.onClick === 'function') {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'status-action'
+    button.textContent = action.label
+    button.onclick = (event) => {
+      event.preventDefault()
+      action.onClick()
+    }
+    statusEl.append(document.createTextNode(' · '), button)
+  }
 }
 
 function setDialogStatus(text, error = false) {
@@ -69,7 +95,96 @@ async function post(url, body) {
   return json
 }
 
-const EDGE_COLOR = { happy: '#15202b', unhappy: '#c2410c', edge: '#b45309', variant: '#475569' }
+const EDGE_COLOR = { happy: '#15202b', unhappy: '#c2410c', edge: '#b45309', variant: '#475569', overlay: '#0f766e' }
+const linkTip = document.querySelector('#link-tip')
+
+function mapLinkSources(fromStep, toStep) {
+  const links = session?.map?.links || []
+  if (!fromStep || !toStep) return []
+  return links
+    .filter((link) => link.from === fromStep.name && link.to === toStep.name)
+    .map((link) => ({
+      context: link.context || '',
+      conditional: Boolean(link.conditional),
+    }))
+}
+
+function hideLinkTip() {
+  if (!linkTip) return
+  linkTip.hidden = true
+  linkTip.replaceChildren()
+}
+
+function showLinkTip(event, payload) {
+  if (!linkTip) return
+  linkTip.replaceChildren()
+  linkTip.append(el('strong', null, payload.title))
+  if (payload.route) linkTip.append(el('p', 'tip-route', payload.route))
+  for (const source of payload.sources || []) {
+    const line = source.context
+      ? `${source.conditional ? 'Branch · ' : ''}${source.context}`
+      : source.conditional
+        ? 'Conditional link in the code'
+        : 'Link found in the code'
+    linkTip.append(el('p', 'tip-source', line))
+  }
+  if (!(payload.sources || []).length) {
+    linkTip.append(el('p', 'tip-source', 'No single control pinned yet — this is the page-to-page path.'))
+  }
+  linkTip.append(el('p', 'tip-note', payload.note))
+  linkTip.hidden = false
+  const pad = 14
+  const width = linkTip.offsetWidth || 280
+  const height = linkTip.offsetHeight || 120
+  const left = Math.min(window.innerWidth - width - pad, Math.max(pad, event.clientX + 14))
+  const top = Math.min(window.innerHeight - height - pad, Math.max(pad, event.clientY + 14))
+  linkTip.style.left = `${left}px`
+  linkTip.style.top = `${top}px`
+}
+
+function attachCountTip(group, flow, from, to, clicks, kind) {
+  const sources = mapLinkSources(from, to)
+  const shot = findShotAnchor(from, to)
+  if (shot?.label && !sources.some((item) => item.context.includes(shot.label))) {
+    sources.unshift({ context: `On screen: “${shot.label}”`, conditional: false })
+  } else if (shot && !sources.length) {
+    sources.push({ context: shot.label ? `On screen: “${shot.label}”` : 'Matched a link on the screenshot', conditional: false })
+  }
+  const title = clicks === 1 ? '1 visit followed this path' : `${clicks.toLocaleString('en-GB')} visits followed this path`
+  const route = `${from.route || from.name} → ${to.route || to.name}`
+  const note = kind === 'link'
+    ? 'Extra page link under the main journey. Counts come from Analytics page referrers, not the exact button.'
+    : 'Main journey step. Counts come from Analytics page referrers, not the exact button.'
+  group.addEventListener('pointerenter', (event) => showLinkTip(event, { title, route, sources, note }))
+  group.addEventListener('pointermove', (event) => {
+    if (linkTip?.hidden) return
+    showLinkTip(event, { title, route, sources, note })
+  })
+  group.addEventListener('pointerleave', hideLinkTip)
+}
+
+function countBadge(svg, mid, clicks, meta) {
+  const group = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+  group.setAttribute('class', 'link-hit')
+  group.dataset.from = meta.from
+  group.dataset.to = meta.to
+  group.dataset.linkLabel = '1'
+  if (meta.bow != null) group.dataset.bow = String(meta.bow)
+  if (meta.link) group.dataset.link = '1'
+  const bg = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+  bg.setAttribute('class', 'link-count-bg')
+  bg.setAttribute('cx', String(mid.x))
+  bg.setAttribute('cy', String(mid.y))
+  bg.setAttribute('r', clicks > 99 ? '14' : '11')
+  const label = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+  label.setAttribute('class', 'link-count')
+  label.setAttribute('x', String(mid.x))
+  label.setAttribute('y', String(mid.y))
+  label.textContent = clicks === 1 ? '1' : String(clicks)
+  group.append(bg, label)
+  svg.appendChild(group)
+  return group
+}
 
 function cardBodyHeight(step) {
   if (step.shotW && step.shotH) return Math.round((CARD_W * step.shotH) / step.shotW)
@@ -112,6 +227,139 @@ function laneMetrics(flow, captions, bodies) {
 function stepPos(flow, step, metrics) {
   const lane = Math.max(0, flow.lanes.findIndex((l) => l.id === step.laneId))
   return { x: LABEL_W / zoom + step.col * (CARD_W + COL_GAP), y: metrics[lane].y + 16 }
+}
+
+function stepBody(step, bodies) {
+  return bodies?.get(step.id) || cardBodyHeight(step)
+}
+
+function edgePath(flow, from, to, metrics, bodies) {
+  const a = stepPos(flow, from, metrics)
+  const b = stepPos(flow, to, metrics)
+  const fromBody = stepBody(from, bodies)
+  const toBody = stepBody(to, bodies)
+  if (Math.abs(a.x - b.x) < 8 && b.y > a.y) {
+    const x = a.x + CARD_W / 2
+    const y1 = a.y + fromBody
+    return `M${x},${y1} C${x},${y1 + 28} ${x},${b.y - 28} ${x},${b.y}`
+  }
+  const x1 = a.x + CARD_W
+  const y1 = a.y + Math.min(120, fromBody / 2)
+  const x2 = b.x
+  const y2 = b.y + Math.min(120, toBody / 2)
+  const mx = (x1 + x2) / 2
+  return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`
+}
+
+/** Unit normal that points down the page, so underlays stay inside the stage. */
+function linkNormal(dx, dy) {
+  const len = Math.hypot(dx, dy) || 1
+  let ox = -dy / len
+  let oy = dx / len
+  if (oy < 0 || (Math.abs(oy) < 0.001 && ox > 0)) {
+    ox = -ox
+    oy = -oy
+  }
+  return { ox, oy, len }
+}
+
+function normalizeHrefPath(href) {
+  try {
+    let path = /^https?:/i.test(href) ? new URL(href).pathname : String(href || '').split(/[?#]/)[0]
+    if (!path) return ''
+    if (!path.startsWith('/')) path = `/${path}`
+    return path.length > 1 ? path.replace(/\/+$/, '') : '/'
+  } catch {
+    return ''
+  }
+}
+
+function pathMatchesStep(path, step) {
+  const route = normalizeHrefPath(step.route || '/')
+  const pattern = normalizeHrefPath(step.pattern || step.route || '/')
+  const value = normalizeHrefPath(path)
+  if (!value) return false
+  if (value === route || value === pattern) return true
+  if (!pattern.includes('*')) return false
+  const body = pattern
+    .split('/')
+    .map((seg, index) => {
+      if (index === 0) return ''
+      if (seg === '*') return '[^/]+'
+      return seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    })
+    .join('/')
+  return new RegExp(`^${body}/?$`, 'i').test(value)
+}
+
+function findShotAnchor(step, toward) {
+  for (const anchor of step.linkAnchors || []) {
+    if (pathMatchesStep(anchor.path || anchor.href || '', toward)) return anchor
+  }
+  return null
+}
+
+function linkAttachY(step, toward, body) {
+  const anchor = findShotAnchor(step, toward)
+  if (anchor?.yRatio != null) return Math.min(body - 6, Math.max(10, anchor.yRatio * body))
+  return null
+}
+
+function linkEnds(from, to, bodies) {
+  const fromBody = stepBody(from, bodies)
+  const toBody = stepBody(to, bodies)
+  const fromY = linkAttachY(from, to, fromBody)
+  const toY = linkAttachY(to, from, toBody)
+  const y1 = fromY ?? fromBody * 0.62
+  const y2 = toY ?? (fromY != null ? Math.min(toBody - 6, Math.max(10, (fromY / fromBody) * toBody)) : toBody * 0.62)
+  return { fromBody, toBody, y1, y2, anchored: fromY != null || toY != null }
+}
+
+/** Thin page-link underlays: side-to-side, height matched to the control on the screenshot when known. */
+function linkPath(flow, from, to, metrics, bodies, bow = 1) {
+  const a = stepPos(flow, from, metrics)
+  const b = stepPos(flow, to, metrics)
+  const { y1: ay, y2: by, anchored } = linkEnds(from, to, bodies)
+  const forward = b.x >= a.x
+  const x1 = forward ? a.x + CARD_W : a.x
+  const x2 = forward ? b.x : b.x + CARD_W
+  const y1 = a.y + ay
+  const y2 = b.y + by
+  const mx = (x1 + x2) / 2
+  const my = (y1 + y2) / 2
+  const { ox, oy, len } = linkNormal(x2 - x1, y2 - y1)
+  const rise = (anchored ? Math.min(48, Math.max(18, len * 0.12)) : Math.min(100, Math.max(42, len * 0.28))) * Math.abs(bow)
+  return `M${x1},${y1} Q${mx + ox * rise},${my + oy * rise} ${x2},${y2}`
+}
+
+function linkMid(flow, from, to, metrics, bodies, bow = 1) {
+  const a = stepPos(flow, from, metrics)
+  const b = stepPos(flow, to, metrics)
+  const { y1: ay, y2: by, anchored } = linkEnds(from, to, bodies)
+  const forward = b.x >= a.x
+  const x1 = forward ? a.x + CARD_W : a.x
+  const x2 = forward ? b.x : b.x + CARD_W
+  const y1 = a.y + ay
+  const y2 = b.y + by
+  const mx = (x1 + x2) / 2
+  const my = (y1 + y2) / 2
+  const { ox, oy, len } = linkNormal(x2 - x1, y2 - y1)
+  const rise = (anchored ? Math.min(48, Math.max(18, len * 0.12)) : Math.min(100, Math.max(42, len * 0.28))) * Math.abs(bow)
+  return { x: mx + ox * rise * 0.5, y: my + oy * rise * 0.5 }
+}
+
+function edgeMid(flow, from, to, metrics, bodies) {
+  const a = stepPos(flow, from, metrics)
+  const b = stepPos(flow, to, metrics)
+  const fromBody = stepBody(from, bodies)
+  const toBody = stepBody(to, bodies)
+  if (Math.abs(a.x - b.x) < 8 && b.y > a.y) {
+    return { x: a.x + CARD_W / 2, y: (a.y + fromBody + b.y) / 2 }
+  }
+  return {
+    x: (a.x + CARD_W + b.x) / 2,
+    y: (a.y + Math.min(120, fromBody / 2) + b.y + Math.min(120, toBody / 2)) / 2,
+  }
 }
 
 function orderedSteps(flow) {
@@ -218,6 +466,69 @@ function summaryLine(summary) {
   return parts.length === 1 ? parts[0] : `${parts.join('. ')}.`
 }
 
+function flowScore(flow) {
+  return session?.scores?.flows?.find((item) => item.flowId === flow?.id) || null
+}
+
+function easeWord(score) {
+  if (score >= 5) return 'Very easy'
+  if (score === 4) return 'Easy'
+  if (score === 3) return 'Workable'
+  if (score === 2) return 'Awkward'
+  return 'Hard'
+}
+
+const easeSheet = document.querySelector('#ease-sheet')
+const easeSheetTitle = document.querySelector('#ease-sheet-title')
+const easeSheetBody = document.querySelector('#ease-sheet-body')
+
+function fillEaseStory(target, story) {
+  target.replaceChildren()
+  target.append(el('p', 'ease-blurb', story.blurb || 'Structural ease for this journey.'))
+  const appendGroup = (label, items, held) => {
+    if (!items?.length) return
+    target.append(el('p', 'ease-label', label))
+    const list = el('ul', held ? 'ease-list ease-list-held' : 'ease-list')
+    const byTitle = new Map()
+    for (const item of items) {
+      if (!byTitle.has(item.title)) byTitle.set(item.title, [])
+      byTitle.get(item.title).push(item.reading)
+    }
+    for (const [title, readings] of byTitle) {
+      const row = el('li')
+      row.append(el('span', 'ease-dim', title))
+      row.append(document.createTextNode(` — ${readings.join(' ')}`))
+      list.append(row)
+    }
+    target.append(list)
+  }
+  appendGroup('What helps', story.helped, false)
+  appendGroup('What holds it back', story.held, true)
+  if (!story.helped?.length && !story.held?.length) {
+    target.append(el('p', 'journey-note', 'Remap the project to refresh the plain-language reasons.'))
+  }
+  target.append(el('p', 'ease-footnote', 'Based on the mapped path structure — not a claim about how the product feels to use.'))
+}
+
+function openEaseSheet(flow) {
+  const scored = flowScore(flow)
+  if (!scored?.overall || !easeSheet) return
+  easeSheetTitle.textContent = `${easeWord(scored.overall)} to use`
+  fillEaseStory(easeSheetBody, scored.story || { blurb: '', helped: [], held: [] })
+  if (!easeSheet.open) easeSheet.showModal()
+}
+
+function easeChip(flow) {
+  const scored = flowScore(flow)
+  if (!scored?.overall) return null
+  const chip = el('button', 'ease-chip')
+  chip.type = 'button'
+  chip.append(el('strong', null, `${easeWord(scored.overall)} to use`))
+  chip.append(el('span', null, 'Why'))
+  chip.onclick = () => openEaseSheet(flow)
+  return chip
+}
+
 function journeyBar(flow) {
   const bar = el('div', 'journey-bar')
   const stats = flowStats(flow)
@@ -230,6 +541,8 @@ function journeyBar(flow) {
     if (summary.span) row.append(figure(summary.span.replace(/^About /, ''), 'a typical visit'))
     bar.append(row)
   }
+  const ease = easeChip(flow)
+  if (ease) bar.append(ease)
   const selected = choices.changes[flow.id] || stats?.changeId || null
   if (flow.changes?.length) {
     const strip = el('div', 'changes')
@@ -262,18 +575,36 @@ function selectChange(flow, id) {
   else render(session.flows)
 }
 
+function needsGoogleSite() {
+  return Boolean(googleStatus.connected && !googleStatus.property)
+}
+
 function paintAnalytics() {
-  const tracked = Boolean(session?.project?.analytics?.measurementId || session?.project?.analytics?.gtmId)
   const connected = Boolean(googleStatus.property)
-  connectBtn.hidden = !tracked || connected
+  // Always offer Connect / Choose site until a property is bound to this project.
+  connectBtn.hidden = connected
+  connectBtn.textContent = needsGoogleSite() ? 'Choose site' : 'Connect Google'
   visits.hidden = !connected
   const deviceLabel = deviceSelect.selectedOptions[0]?.textContent || 'Everyone'
   const sourceLabel = sourceSelect.selectedOptions[0]?.textContent || 'Everyone'
-  visitsToggle.textContent = deviceLabel === 'Everyone' && sourceLabel === 'Everyone' ? 'Everyone' : `${deviceLabel} · ${sourceLabel}`
+  const siteLabel = googleStatus.property?.label || googleStatus.property?.url || ''
+  visitsToggle.textContent =
+    deviceLabel === 'Everyone' && sourceLabel === 'Everyone'
+      ? siteLabel || 'Everyone'
+      : `${deviceLabel} · ${sourceLabel}`
 }
 
 function setAnalyticsNote(text, error = false) {
   if (capturing && !error) return
+  const connectPrompt = /connect google|choose (a )?site|choose which site/i.test(text || '')
+  if (connectPrompt) {
+    paintAnalytics()
+    setStatus(text, error, {
+      label: needsGoogleSite() ? 'Choose site' : 'Connect Google',
+      onClick: () => connectBtn.click(),
+    })
+    return
+  }
   setStatus(text, error)
 }
 
@@ -318,11 +649,14 @@ function pollConnect() {
 async function afterConnect() {
   const resolved = await post('/api/google/resolve')
   if (resolved.needsChoice) {
+    // Drop a sticky property from a previous project so visits aren't from the wrong site.
+    googleStatus = { ...googleStatus, connected: true, property: null }
     paintAnalytics()
+    setAnalyticsNote('Choose which site’s visits to show.')
     openSites(resolved.sites || [])
     return
   }
-  googleStatus = { ...googleStatus, connected: true, property: resolved.property || googleStatus.property }
+  googleStatus = { ...googleStatus, connected: true, property: resolved.property || null }
   paintAnalytics()
   await loadMetrics()
 }
@@ -339,7 +673,20 @@ async function loadMetrics() {
     }
     metricsBoard = res
     googleStatus = { ...googleStatus, connected: true, property: res.property || googleStatus.property }
-    for (const flow of res.flows || []) choices.changes[flow.id] = flow.changeId
+    for (const flow of res.flows || []) {
+      choices.changes[flow.id] = flow.changeId
+      const live = session.flows.find((item) => item.id === flow.id)
+      if (!live) continue
+      if (flow.links) live.links = flow.links
+      if (flow.edgeClicks?.length) {
+        const byKey = new Map(flow.edgeClicks.map((edge) => [`${edge.from}->${edge.to}`, edge.clicks]))
+        for (const edge of live.edges || []) {
+          const clicks = byKey.get(`${edge.from}->${edge.to}`)
+          if (clicks) edge.clicks = clicks
+          else delete edge.clicks
+        }
+      }
+    }
     paintAnalytics()
     render(session.flows)
     setAnalyticsNote('')
@@ -355,6 +702,12 @@ function openSites(sites) {
     setAnalyticsNote("This account can't see that site. Switch to the Google account your company uses for the website.", true)
     return
   }
+  const hint = `${session?.project?.name || ''} ${session?.project?.path || ''}`.toLowerCase()
+  const preferred = sites.findIndex((site) => {
+    const hay = `${site.label || ''} ${site.url || ''}`.toLowerCase()
+    if (/archivist|familytree/.test(hint) && /archivist|familytree/.test(hay)) return true
+    return hint.split(/[\s/_-]+/).filter((part) => part.length > 3).some((part) => hay.includes(part))
+  })
   sites.forEach((site, index) => {
     const label = document.createElement('label')
     label.className = 'site-choice'
@@ -362,7 +715,7 @@ function openSites(sites) {
     input.type = 'radio'
     input.name = 'site'
     input.value = site.id
-    input.checked = index === 0
+    input.checked = index === (preferred >= 0 ? preferred : 0)
     label.append(input, document.createTextNode(site.url ? `${site.label} — ${site.url}` : site.label))
     list.append(label)
   })
@@ -370,6 +723,7 @@ function openSites(sites) {
 }
 
 function render(flows) {
+  hideLinkTip()
   board.innerHTML = ''
   const flow = flows.find((f) => f.id === activeId) ?? flows[0]
   if (!flow) {
@@ -382,10 +736,13 @@ function render(flows) {
 
   const tabs = document.createElement('div')
   tabs.className = 'journeys'
+  const label = document.createElement('span')
+  label.className = 'journeys-label'
+  label.textContent = 'Paths'
   const group = document.createElement('div')
   group.className = 'journey-group'
   group.setAttribute('role', 'group')
-  group.setAttribute('aria-label', 'Journeys')
+  group.setAttribute('aria-label', 'Paths')
   for (const item of flows) {
     const button = document.createElement('button')
     button.type = 'button'
@@ -394,7 +751,7 @@ function render(flows) {
     button.onclick = () => selectFlow(item.id)
     group.appendChild(button)
   }
-  tabs.appendChild(group)
+  tabs.append(label, group)
   board.appendChild(tabs)
   const bar = journeyBar(flow)
   if (bar) board.appendChild(bar)
@@ -446,27 +803,39 @@ function render(flows) {
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  ;(flow.links || []).forEach((link, index) => {
+    const from = byId.get(link.from)
+    const to = byId.get(link.to)
+    if (!from || !to) return
+    // Arc under the happy path so the curve stays inside the stage (upward bows clip).
+    const bow = from.kind === 'happy' && to.kind === 'happy' ? 1 + (index % 3) * 0.35 : index % 2 === 0 ? 1 : -1
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.dataset.from = link.from
+    path.dataset.to = link.to
+    path.dataset.link = '1'
+    path.dataset.bow = String(bow)
+    path.setAttribute('d', linkPath(flow, from, to, metrics, null, bow))
+    path.setAttribute('fill', 'none')
+    path.setAttribute('stroke', '#44403c')
+    path.setAttribute('stroke-width', '1.5')
+    path.setAttribute('stroke-linecap', 'round')
+    path.setAttribute('stroke-dasharray', link.conditional ? '3 4' : '0')
+    path.setAttribute('opacity', '0.55')
+    svg.appendChild(path)
+    if (link.clicks > 0) {
+      const mid = linkMid(flow, from, to, metrics, null, bow)
+      const group = countBadge(svg, mid, link.clicks, { from: link.from, to: link.to, bow, link: true })
+      attachCountTip(group, flow, from, to, link.clicks, 'link')
+    }
+  })
   for (const edge of flow.edges) {
     const from = byId.get(edge.from)
     const to = byId.get(edge.to)
     if (!from || !to) continue
-    const a = stepPos(flow, from, metrics)
-    const b = stepPos(flow, to, metrics)
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
     path.dataset.from = edge.from
     path.dataset.to = edge.to
-    if (Math.abs(a.x - b.x) < 8 && b.y > a.y) {
-      const x = a.x + CARD_W / 2
-      const y1 = a.y + cardBodyHeight(from)
-      path.setAttribute('d', `M${x},${y1} C${x},${y1 + 28} ${x},${b.y - 28} ${x},${b.y}`)
-    } else {
-      const x1 = a.x + CARD_W
-      const y1 = a.y + Math.min(120, cardBodyHeight(from) / 2)
-      const x2 = b.x
-      const y2 = b.y + Math.min(120, cardBodyHeight(to) / 2)
-      const mx = (x1 + x2) / 2
-      path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`)
-    }
+    path.setAttribute('d', edgePath(flow, from, to, metrics, null))
     path.setAttribute('fill', 'none')
     const fromCount = stepStat(from, flow)?.reachCount || 0
     const toCount = stepStat(to, flow)?.reachCount || 0
@@ -476,6 +845,11 @@ function render(flows) {
     path.setAttribute('stroke-linecap', 'round')
     path.setAttribute('marker-end', 'url(#arrow)')
     svg.appendChild(path)
+    if (edge.clicks > 0 && to.kind !== 'unhappy') {
+      const mid = edgeMid(flow, from, to, metrics, null)
+      const group = countBadge(svg, mid, edge.clicks, { from: edge.from, to: edge.to })
+      attachCountTip(group, flow, from, to, edge.clicks, 'edge')
+    }
   }
   const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
   defs.innerHTML = '<marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#57534e"/></marker>'
@@ -564,10 +938,24 @@ function render(flows) {
   projectBtn.textContent = session?.project?.name || 'Project'
   pdfBtn.disabled = !ready
   figmaBtn.disabled = !ready
+  syncOpenSiteButton()
+}
+
+function syncOpenSiteButton() {
+  const live = session?.project?.liveUrl
+  if (!openSiteBtn) return
+  openSiteBtn.hidden = !live
+  openSiteBtn.title = live ? `Open ${live} in a new tab` : 'Open the running local app in a new tab'
 }
 
 function clampZoom(value) {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value))
+}
+
+/** Captions stay a bit more readable than raw zoom, but shrink when Fit would make them collide. */
+function labelScale() {
+  const screenCard = CARD_W * zoom
+  return Math.min(1, Math.max(zoom, screenCard / 168))
 }
 
 function place(anchor) {
@@ -576,12 +964,18 @@ function place(anchor) {
   const flow = mapFlow
   if (!canvas || !stage || !flow) return
   canvas.style.setProperty('--z', String(zoom))
+  const scale = labelScale()
+  stage.classList.toggle('zoomed-out', zoom < 0.4)
   const captions = new Map()
   const bodies = new Map()
   for (const card of canvas.querySelectorAll('.card')) bodies.set(card.dataset.step, card.offsetHeight)
   for (const caption of stage.querySelectorAll('.caption')) {
-    caption.style.width = `${CARD_W * zoom}px`
-    captions.set(caption.dataset.step, caption.offsetHeight / zoom)
+    const screenW = CARD_W * zoom
+    caption.style.width = `${screenW / scale}px`
+    caption.style.transform = `scale(${scale})`
+    caption.style.transformOrigin = 'top left'
+    caption.classList.toggle('compact', scale < 0.55)
+    captions.set(caption.dataset.step, (caption.offsetHeight * scale) / zoom)
   }
   const metrics = laneMetrics(flow, captions, bodies)
   const byId = new Map(flow.steps.map((step) => [step.id, step]))
@@ -618,6 +1012,8 @@ function place(anchor) {
     const index = flow.lanes.findIndex((lane) => lane.id === label.dataset.lane)
     if (index < 0) continue
     label.style.top = `${metrics[index].y * zoom + 10}px`
+    label.style.transform = `scale(${scale})`
+    label.style.transformOrigin = 'top left'
   }
   for (const card of canvas.querySelectorAll('.card')) {
     const step = byId.get(card.dataset.step)
@@ -637,10 +1033,15 @@ function place(anchor) {
   const svg = canvas.querySelector('svg')
   if (svg) {
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
-    for (const path of svg.querySelectorAll('path')) {
+    for (const path of svg.querySelectorAll('path[data-from]')) {
       const from = byId.get(path.dataset.from)
       const to = byId.get(path.dataset.to)
       if (!from || !to) continue
+      if (path.dataset.link) {
+        const bow = Number(path.dataset.bow) || 1
+        path.setAttribute('d', linkPath(flow, from, to, metrics, bodies, bow))
+        continue
+      }
       const a = stepPos(flow, from, metrics)
       const b = stepPos(flow, to, metrics)
       if (Math.abs(a.x - b.x) < 8 && b.y > a.y) {
@@ -648,14 +1049,24 @@ function place(anchor) {
         const y1 = a.y + (bodies.get(from.id) || cardBodyHeight(from)) + (captions.get(from.id) || 0)
         path.setAttribute('d', `M${x},${y1} C${x},${y1 + 28} ${x},${b.y - 28} ${x},${b.y}`)
       } else {
-        const fromBody = bodies.get(from.id) || cardBodyHeight(from)
-        const toBody = bodies.get(to.id) || cardBodyHeight(to)
-        const x1 = a.x + CARD_W
-        const y1 = a.y + Math.min(120, fromBody / 2)
-        const x2 = b.x
-        const y2 = b.y + Math.min(120, toBody / 2)
-        const mx = (x1 + x2) / 2
-        path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`)
+        path.setAttribute('d', edgePath(flow, from, to, metrics, bodies))
+      }
+    }
+    for (const group of svg.querySelectorAll('g[data-link-label]')) {
+      const from = byId.get(group.dataset.from)
+      const to = byId.get(group.dataset.to)
+      if (!from || !to) continue
+      const bow = Number(group.dataset.bow) || 1
+      const mid = group.dataset.bow ? linkMid(flow, from, to, metrics, bodies, bow) : edgeMid(flow, from, to, metrics, bodies)
+      const bg = group.querySelector('.link-count-bg')
+      const label = group.querySelector('.link-count')
+      if (bg) {
+        bg.setAttribute('cx', String(mid.x))
+        bg.setAttribute('cy', String(mid.y))
+      }
+      if (label) {
+        label.setAttribute('x', String(mid.x))
+        label.setAttribute('y', String(mid.y))
       }
     }
   }
@@ -704,12 +1115,19 @@ function fitZoom(scroll) {
     place()
     const stage = board.querySelector('.stage')
     if (!stage?.offsetWidth || !stage?.offsetHeight) break
-    const fitted = Math.min(1, zoom * availW / stage.offsetWidth, zoom * availH / stage.offsetHeight)
+    // Fit across the width; allow vertical scroll instead of crushing to tiny zoom.
+    const byWidth = zoom * availW / stage.offsetWidth
+    let fitted = Math.min(1, byWidth)
+    const heightAtFit = stage.offsetHeight * (fitted / zoom)
+    if (heightAtFit > availH * 2.4) {
+      fitted = Math.min(fitted, zoom * (availH * 2.4) / stage.offsetHeight)
+    }
+    fitted = clampZoom(Math.max(Math.min(byWidth, 0.42), Math.min(1, fitted)))
     if (Math.abs(fitted - zoom) < 0.02) {
-      next = clampZoom(fitted)
+      next = fitted
       break
     }
-    next = clampZoom(fitted)
+    next = fitted
   }
   zoom = next
   place()
@@ -811,12 +1229,24 @@ async function captureVisuals() {
   capturing = true
   setStatus('Photographing each screen…')
   try {
-    const res = await post('/api/capture', { path: pathInput.value.trim() })
+    const email = loginEmailInput?.value.trim() || ''
+    const password = loginPasswordInput?.value || ''
+    const appUrl = appUrlInput?.value.trim() || session.project?.liveUrl || ''
+    if (email) sessionStorage.setItem('flowmap-login', JSON.stringify({ email }))
+    if (appUrl) sessionStorage.setItem('flowmap-app-url', appUrl)
+    const res = await post('/api/capture', {
+      path: pathInput.value.trim(),
+      // Prefer the URL you typed (e.g. :4000), then a prior capture of this project.
+      url: appUrl || undefined,
+      email: email || undefined,
+      password: password || undefined,
+    })
     session.flows = res.flows
     session.project.liveUrl = res.liveUrl
     render(session.flows)
+    syncOpenSiteButton()
     const failed = res.flows.flatMap((flow) => flow.steps).find((step) => step.shotError && !step.shotId)
-    setStatus(failed ? failed.shotError : '', Boolean(failed))
+    setStatus(failed ? failed.shotError : res.liveUrl ? `Running at ${res.liveUrl}` : '', Boolean(failed))
     await loadPreflight()
   } catch (err) {
     setStatus(err.message, true)
@@ -824,6 +1254,12 @@ async function captureVisuals() {
     capturing = false
   }
 }
+
+openSiteBtn?.addEventListener('click', () => {
+  const live = session?.project?.liveUrl
+  if (!live) return
+  window.open(live, '_blank', 'noopener,noreferrer')
+})
 
 mapBtn.onclick = async () => {
   const folder = pathInput.value.trim()
@@ -837,7 +1273,7 @@ mapBtn.onclick = async () => {
     choices.changes = {}
     metricsBoard = null
     if (!session.stats.screens) {
-      setDialogStatus('No pages found. FlowMap looks for app/page, pages/, or router paths.', true)
+      setDialogStatus('No pages found. FlowMap looks for app/page, pages/, or router paths — including inside frontend/ or web/.', true)
       return
     }
     render(session.flows)
@@ -1016,13 +1452,18 @@ pdfBtn.onclick = async () => {
 
 figmaBtn.onclick = () => help.showModal()
 
-connectBtn.onclick = switchBtn.onclick = async () => {
+async function startGoogleConnect({ forceAccountPicker = false } = {}) {
   try {
     await refreshGoogle()
     if (!googleStatus.configured) {
       document.querySelector('#google-redirect').textContent = googleStatus.redirect
       document.querySelector('#google-setup-status').textContent = ''
       document.querySelector('#google-setup').showModal()
+      return
+    }
+    // Already signed in, just missing a site for this project — open the picker.
+    if (googleStatus.connected && !forceAccountPicker) {
+      await afterConnect()
       return
     }
     if (googleStatus.connected) await post('/api/google/disconnect')
@@ -1033,6 +1474,9 @@ connectBtn.onclick = switchBtn.onclick = async () => {
     setAnalyticsNote(err.message, true)
   }
 }
+
+connectBtn.onclick = () => startGoogleConnect()
+switchBtn.onclick = () => startGoogleConnect({ forceAccountPicker: true })
 
 deviceSelect.onchange = () => {
   choices.device = deviceSelect.value

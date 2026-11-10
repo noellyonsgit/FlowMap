@@ -15,7 +15,7 @@ import {
   savedProperty,
 } from './google.js'
 import { siteHost } from './match.js'
-import { describeFlow, rangeFor } from './metrics.js'
+import { attachLinkClicks, describeFlow, rangeFor } from './metrics.js'
 
 function page(title, message) {
   return `<!doctype html>
@@ -50,9 +50,13 @@ async function sharedRange(cache, token, propertyId, range, device, source, name
   return cache.get(key)
 }
 
+function projectHint(session) {
+  return session?.project?.name || session?.project?.path || ''
+}
+
 export async function loadBoard(session, body = {}) {
   const measurementId = session?.project?.analytics?.measurementId || ''
-  const resolved = await resolveProperty(measurementId)
+  const resolved = await resolveProperty(measurementId, session?.project?.path || '', projectHint(session))
   if (!resolved.connected) {
     const err = new Error('Connect Google to read visits')
     err.code = 'CONNECT'
@@ -89,11 +93,13 @@ export async function loadBoard(session, body = {}) {
   )
 
   const flows = []
+  const transitions = []
   for (let index = 0; index < session.flows.length; index++) {
     const flow = session.flows[index]
     const plan = plans[index]
-    const current = packs[index].current || { pages: [], events: [], summary: null }
+    const current = packs[index].current || { pages: [], events: [], summary: null, transitions: [] }
     const before = packs[index].before
+    for (const row of current.transitions || []) transitions.push(row)
     flows.push(
       describeFlow(
         flow,
@@ -108,18 +114,25 @@ export async function loadBoard(session, body = {}) {
       ),
     )
   }
-  return { property: resolved.property, flows }
+  attachLinkClicks(session.flows, transitions)
+  for (const item of flows) {
+    const live = session.flows.find((flow) => flow.id === item.id)
+    if (live?.links) item.links = live.links
+    if (live?.edges) item.edgeClicks = live.edges.filter((edge) => edge.clicks > 0).map((edge) => ({ id: edge.id, from: edge.from, to: edge.to, clicks: edge.clicks }))
+  }
+  return { property: resolved.property, flows, transitions }
 }
 
 export async function handleAnalytics(req, res, url, ctx) {
   const { send, readBody, getSession, port } = ctx
 
   if (req.method === 'GET' && url.pathname === '/api/google/status') {
+    const session = getSession()
     return send(res, 200, {
       ok: true,
       configured: Boolean(googleClient()),
       connected: isConnected(),
-      property: savedProperty(),
+      property: savedProperty(session?.project?.path || ''),
       redirect: redirectUri(port),
     })
   }
@@ -150,7 +163,11 @@ export async function handleAnalytics(req, res, url, ctx) {
   if (req.method === 'POST' && url.pathname === '/api/google/resolve') {
     const session = getSession()
     try {
-      const resolved = await resolveProperty(session?.project?.analytics?.measurementId || '')
+      const resolved = await resolveProperty(
+        session?.project?.analytics?.measurementId || '',
+        session?.project?.path || '',
+        projectHint(session),
+      )
       if (resolved.message && !resolved.property) return send(res, 200, { ok: false, error: resolved.message })
       return send(res, 200, { ok: true, ...resolved, configured: Boolean(googleClient()) })
     } catch (err) {
@@ -159,7 +176,8 @@ export async function handleAnalytics(req, res, url, ctx) {
   }
   if (req.method === 'POST' && url.pathname === '/api/google/choose') {
     const body = await readBody(req)
-    const property = await chooseProperty(body.property)
+    const session = getSession()
+    const property = await chooseProperty(body.property, session?.project?.path || body.path || '')
     return send(res, 200, { ok: true, property })
   }
   if (req.method === 'POST' && url.pathname === '/api/google/disconnect') {
